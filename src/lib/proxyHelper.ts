@@ -131,13 +131,25 @@ export async function fetchWithProxy(
   maxRetries: number = 2,
 ): Promise<Response> {
   let lastError: Error | null = null;
+  // Login thẳng: không có proxy list vẫn phải đăng nhập được. Trước đây pool rỗng
+  // là chặn hẳn (throw), nên khi URL proxy mặc định chết thì /login không dùng được.
+  // Giờ: có proxy thì đi qua proxy (ưu tiên), không có thì gửi trực tiếp từ IP
+  // server. Đặt DISABLE_DIRECT_FALLBACK=1 nếu muốn giữ hành vi cũ (chỉ dùng proxy).
+  const allowDirect = process.env.DISABLE_DIRECT_FALLBACK !== "1";
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const { agent, proxy } = await getRandomProxyAgent();
     if (!agent || !proxy) {
-      // No proxy available — throw error (don't fallback to direct fetch
-      // because Discord has rate-limited the server IP)
-      throw new Error("Proxy pool rỗng — không thể gửi request. Vui lòng tải lại proxy list.");
+      if (!allowDirect) {
+        // No proxy available — throw error (don't fallback to direct fetch
+        // because Discord has rate-limited the server IP)
+        throw new Error("Proxy pool rỗng — không thể gửi request. Vui lòng tải lại proxy list.");
+      }
+      console.warn("[ProxyHelper] Proxy pool rỗng → gửi trực tiếp từ IP server (login thẳng)");
+      const directOptions: any = { ...options };
+      directOptions.headersTimeout = 15_000;
+      directOptions.bodyTimeout = 15_000;
+      return (await undiciFetch(url, directOptions)) as unknown as Response;
     }
     try {
       // Use undici's fetch (NOT global fetch — global fetch doesn't support dispatcher)

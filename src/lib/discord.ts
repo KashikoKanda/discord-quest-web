@@ -30,21 +30,17 @@ export function getBuildVersion(): { clientVersion: string; buildNumber: number;
   return { clientVersion: CLIENT_VERSION, buildNumber: BUILD_NUMBER, nativeBuildNumber: NATIVE_BUILD_NUMBER };
 }
 
-// Chrome version pool — keep updated with the latest stable releases.
-// Source: https://chromereleases.googleblog.com (Chrome Stable channel)
-// Latest as of Nov 2026: Chrome 158.0.8127.18 (Early Stable)
-const CHROME_VERSIONS = [
-  // Chrome 158 (Nov 2026 — latest stable)
-  "158.0.8127.18",
-  "158.0.8127.19",
-  // Chrome 157 (Oct 2026)
-  "157.0.6533.120",
-  "157.0.6533.88",
-  // Chrome 156 (Sep 2026 — still widely used)
-  "156.0.6993.120",
-  "156.0.6993.92",
-  // Chrome 155 (Aug 2026)
-  "155.0.6700.80",
+// Electron/Chromium pairs that actually ship together.
+//
+// A real Discord desktop client reports the Chromium build bundled in its
+// Electron version (Electron 37 -> Chromium 138, 36 -> 136, 35 -> 134).
+// The old code paired the newest Chrome (158) with Electron/37.6.0, a
+// combination that never exists in the wild — an easy signal to flag and
+// revoke a token. Keep the two halves of the UA in lockstep.
+const ELECTRON_CHROMIUM_PAIRS: Array<{ electron: string; chrome: string }> = [
+  { electron: "37.6.0", chrome: "138.0.7204.251" },
+  { electron: "36.9.5", chrome: "136.0.7103.114" },
+  { electron: "35.7.5", chrome: "134.0.6998.205" },
 ];
 
 // OS version pool — mix of Windows 10/11 variants (most common in real traffic)
@@ -157,16 +153,17 @@ interface TokenFingerprint {
   osVersion: string;
 }
 
-function buildUserAgent(chromeVersion: string, osVersion: string): string {
+function buildUserAgent(chromeVersion: string, osVersion: string, electronVersion: string): string {
   // Discord Client UA - REQUIRED for heartbeat/video-progress API
   // Regular Chrome UA gets 401 Unauthorized from Discord
-  return `Mozilla/5.0 (Windows NT ${osVersion.split(".").slice(0, 2).join(".")}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/${CLIENT_VERSION} Chrome/${chromeVersion} Electron/37.6.0 Safari/537.36`;
+  return `Mozilla/5.0 (Windows NT ${osVersion.split(".").slice(0, 2).join(".")}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/${CLIENT_VERSION} Chrome/${chromeVersion} Electron/${electronVersion} Safari/537.36`;
 }
 
 function generateFingerprintData(): Omit<TokenFingerprint, "userAgent"> & { userAgent: string } {
-  const chromeVersion = CHROME_VERSIONS[Math.floor(Math.random() * CHROME_VERSIONS.length)];
+  const pair = ELECTRON_CHROMIUM_PAIRS[Math.floor(Math.random() * ELECTRON_CHROMIUM_PAIRS.length)];
+  const chromeVersion = pair.chrome;
   const osVersion = OS_VERSIONS[Math.floor(Math.random() * OS_VERSIONS.length)];
-  const userAgent = buildUserAgent(chromeVersion, osVersion);
+  const userAgent = buildUserAgent(chromeVersion, osVersion, pair.electron);
 
   return {
     launchId: randomUUID(),
@@ -310,9 +307,10 @@ export async function discordFetch(
     timezone = built.fp.timezone;
   } else {
     // No tokenId → generate one-time fingerprint (stateless)
-    const oneTimeChrome = CHROME_VERSIONS[Math.floor(Math.random() * CHROME_VERSIONS.length)];
+    const oneTimePair = ELECTRON_CHROMIUM_PAIRS[Math.floor(Math.random() * ELECTRON_CHROMIUM_PAIRS.length)];
+    const oneTimeChrome = oneTimePair.chrome;
     const oneTimeOs = OS_VERSIONS[Math.floor(Math.random() * OS_VERSIONS.length)];
-    const oneTimeUA = buildUserAgent(oneTimeChrome, oneTimeOs);
+    const oneTimeUA = buildUserAgent(oneTimeChrome, oneTimeOs, oneTimePair.electron);
     superProps = Buffer.from(JSON.stringify({
       os: "Windows",
       browser: "Discord Client",

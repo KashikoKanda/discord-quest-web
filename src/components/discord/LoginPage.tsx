@@ -1172,7 +1172,8 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
  * ────────────────────────────────────────────────────────────── */
 
 export default function LoginPage() {
-  const [tab, setTab] = useState<LoginTab>("token");
+  // Login thẳng (email + mật khẩu) là mặc định; Token/QR vẫn giữ cho ai cần.
+  const [tab, setTab] = useState<LoginTab>("email");
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [proxyCountry, setProxyCountry] = useState("auto");
   const [error] = useState(() => {

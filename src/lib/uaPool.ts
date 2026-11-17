@@ -56,16 +56,27 @@ const SEC_CH_UA_PLATFORM_VERSIONS = [
 const SEC_CH_UA_ARCH = ['"x86"', '"arm"'];
 const SEC_CH_UA_BITNESS = ['"64"', '"32"'];
 
-// Accept-Language values (match locale of real users)
-const ACCEPT_LANGUAGES = [
-  "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",  // User's locale
-  "en-US,en;q=0.9,vi-VN;q=0.8,vi;q=0.7",
-  "en-US,en;q=0.9",
-  "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-  "en-US,en;q=0.9,ja;q=0.7",
-  "en-GB,en;q=0.9,en-US;q=0.8",
-  "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+// Locale profiles — locale, Accept-Language and timezone must agree.
+// A real browser never sends a vi-VN Accept-Language with an en-US system locale.
+const LOCALE_PROFILES: Array<{ locale: string; acceptLanguage: string; timezone: string }> = [
+  { locale: "en-US", acceptLanguage: "en-US,en;q=0.9", timezone: "America/New_York" },
+  { locale: "en-US", acceptLanguage: "en-US,en;q=0.9,es;q=0.8", timezone: "America/Los_Angeles" },
+  { locale: "en-GB", acceptLanguage: "en-GB,en;q=0.9,en-US;q=0.8", timezone: "Europe/London" },
+  { locale: "vi-VN", acceptLanguage: "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7", timezone: "Asia/Saigon" },
+  { locale: "ja-JP", acceptLanguage: "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7", timezone: "Asia/Tokyo" },
+  { locale: "fr-FR", acceptLanguage: "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7", timezone: "Europe/Paris" },
+  { locale: "de-DE", acceptLanguage: "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7", timezone: "Europe/Berlin" },
 ];
+
+// sec-ch-ua-platform-version -> real Windows build reported in x-super-properties
+const PLATFORM_VERSION_TO_OS: Record<string, string> = {
+  "10.0.0": "10.0.19045", // Win 10 22H2
+  "11.0.0": "10.0.22000", // Win 11 21H2
+  "12.0.0": "10.0.22000", // Win 11 21H2 variant
+  "13.0.0": "10.0.22621", // Win 11 22H2
+  "14.0.0": "10.0.22631", // Win 11 23H2
+  "15.0.0": "10.0.26100", // Win 11 24H2
+};
 
 /** Pick random element from array */
 function pick<T>(arr: T[]): T {
@@ -91,6 +102,10 @@ export interface UABundle {
   chromeVersion: string;
   osVersion: string;
   acceptLanguage: string;
+  locale: string;
+  timezone: string;
+  /** Windows build that matches sec-ch-ua-platform-version (used by x-super-properties). */
+  superPropsOsVersion: string;
 }
 
 /**
@@ -103,8 +118,10 @@ export function pickRandomUA(): UABundle {
   const major = chrome.split(".")[0];
   const os = pick(SEC_CH_UA_PLATFORM_VERSIONS);
   const arch = pick(SEC_CH_UA_ARCH);
-  const bitness = pick(SEC_CH_UA_BITNESS);
-  const acceptLanguage = pick(ACCEPT_LANGUAGES);
+  // arm64 machines never report 32-bit
+  const bitness = arch === '"arm"' ? '"64"' : pick(SEC_CH_UA_BITNESS);
+  const profile = pick(LOCALE_PROFILES);
+  const acceptLanguage = profile.acceptLanguage;
 
   // Real Chrome UA format: Windows NT 10.0 (always — even for Win 11)
   const userAgent = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
@@ -128,6 +145,9 @@ export function pickRandomUA(): UABundle {
     chromeVersion: chrome,
     osVersion: os,
     acceptLanguage,
+    locale: profile.locale,
+    timezone: profile.timezone,
+    superPropsOsVersion: PLATFORM_VERSION_TO_OS[os] ?? "10.0.22631",
   };
 }
 
@@ -145,15 +165,17 @@ export function buildSuperProperties(ua: UABundle): {
     browser: "Chrome",
     release_channel: "stable",
     client_version: clientVersion,
-    os_version: "10.0.22631",  // Match what real browser reports
-    os_arch: "x64",
-    app_arch: "x64",
-    system_locale: "en-US",
+    os_version: ua.superPropsOsVersion, // matches sec-ch-ua-platform-version
+    os_arch: ua.secChUaArch.replace(/"/g, ""),
+    app_arch: ua.secChUaArch.replace(/"/g, ""),
+    system_locale: ua.locale, // matches Accept-Language / x-discord-locale
     has_client_mods: false,
     client_launch_id: randomUUID(),
     browser_user_agent: ua.userAgent,
     browser_version: ua.chromeVersion,
-    browser_version_list: [ua.chromeVersion, "HeadlessChrome", ua.chromeVersion],
+    // Real Discord web sends the same full version three times —
+    // "HeadlessChrome" here was a giveaway that the client was automated.
+    browser_version_list: [ua.chromeVersion, ua.chromeVersion, ua.chromeVersion],
     client_build_number: buildNumber,
     native_build_number: nativeBuildNumber,
     client_event_source: null,
@@ -176,8 +198,8 @@ export function buildDiscordHeaders(ua: UABundle, superProps: string): Record<st
     "User-Agent": ua.userAgent,
     "x-super-properties": superProps,
     "x-debug-options": "bugReporterEnabled",
-    "x-discord-locale": "en-US",
-    "x-discord-timezone": "Asia/Saigon",
+    "x-discord-locale": ua.locale,
+    "x-discord-timezone": ua.timezone,
     Accept: "application/json",
     "Accept-Language": ua.acceptLanguage,
     Origin: "https://discord.com",

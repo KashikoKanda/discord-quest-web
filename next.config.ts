@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Không công khai "X-Powered-By: Next.js" và không xuất source map — người
+  // ngoài không đọc được code gốc từ DevTools/production bundle.
+  poweredByHeader: false,
+  productionBrowserSourceMaps: false,
   turbopack: {},
   // NOTE: "ws" is intentionally NOT in serverExternalPackages — it must be
   // bundled into the standalone output so the QR-auth WebSocket client works
@@ -26,16 +30,17 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Allow iframe embedding from any origin
+        // Chỉ chính domain này được nhúng app vào iframe (trước đây là ALLOWALL,
+        // nghĩa là site lạ có thể iframe dựng lại UI và dụ người dùng).
         source: "/(.*)",
         headers: [
           {
             key: "X-Frame-Options",
-            value: "ALLOWALL",
+            value: "SAMEORIGIN",
           },
           {
             key: "Content-Security-Policy",
-            value: "frame-ancestors *;",
+            value: "frame-ancestors 'self';",
           },
         ],
       },
