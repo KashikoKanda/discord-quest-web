@@ -1,0 +1,6 @@
+{
+  "proxies": [
+    "https://change4.owlproxy.com:7778:USER_custom_zone_IT_st__city_sid_1234567_time_10:PASSWORD",
+    "change4.owlproxy.com:7778:USER-custom-DE-session-7654321-life-10m:PASSWORD"
+  ]
+}

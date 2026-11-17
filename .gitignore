@@ -13,3 +13,6 @@ quest-flow-guide.txt
 *.db
 *.db-journal
 db/
+
+# danh sách proxy cục bộ (chứa user:pass) — không commit
+proxy.json

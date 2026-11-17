@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+
 /**
  * Proxy List Manager
  * Fetches proxy list from GitHub raw URL, caches it, and provides
@@ -22,11 +24,36 @@
 // Configuration
 // ──────────────────────────────────────────────────
 
-// Default GitHub raw URL for proxy list - can be overridden via env var
-const DEFAULT_PROXY_LIST_URL = "https://raw.githubusercontent.com/Kandagawa/Kanda/refs/heads/main/proxy.json";
+/**
+ * Nguồn danh sách proxy.
+ *
+ * URL mặc định cũ trỏ vào tài khoản GitHub Kandagawa — tài khoản đó đã bị ban nên
+ * repo không còn truy cập được (404). Không hardcode host nào nữa; thứ tự lấy:
+ *
+ *   1. PROXY_LIST_URL   — URL bất kỳ (raw GitHub mới, gist, S3, chính app này...)
+ *   2. PROXY_LIST_FILE  — file JSON/plain text trên máy (mặc định ./proxy.json)
+ *   3. PROXY_LIST       — dán thẳng danh sách vào biến môi trường, mỗi dòng 1 proxy
+ */
+type ProxySource = { kind: "url"; value: string } | { kind: "file"; value: string } | { kind: "inline"; value: string };
 
-function getProxyListUrl(): string {
-  return process.env.PROXY_LIST_URL || DEFAULT_PROXY_LIST_URL;
+const DEFAULT_PROXY_FILE = "proxy.json";
+
+export function getProxySource(): ProxySource | null {
+  const url = process.env.PROXY_LIST_URL?.trim();
+  if (url) return { kind: "url", value: url };
+
+  const inline = process.env.PROXY_LIST?.trim();
+  if (inline) return { kind: "inline", value: inline };
+
+  const file = process.env.PROXY_LIST_FILE?.trim() || DEFAULT_PROXY_FILE;
+  try {
+    // Chỉ dùng file khi nó thực sự tồn tại
+    if (readFileSync(file, "utf8").length >= 0) return { kind: "file", value: file };
+  } catch {
+    // không có file → không có nguồn
+  }
+
+  return null;
 }
 
 // ──────────────────────────────────────────────────
@@ -148,24 +175,37 @@ export async function fetchProxyList(forceRefresh = false): Promise<ProxyEntry[]
     return cachedProxies;
   }
 
-  const url = getProxyListUrl();
-  console.log(`[ProxyList] Fetching proxy list...`);
+  const source = getProxySource();
+  if (!source) {
+    console.warn("[ProxyList] Chưa cấu hình nguồn proxy (PROXY_LIST_URL / PROXY_LIST_FILE / PROXY_LIST) — bỏ qua danh sách chung");
+    return cachedProxies;
+  }
+
+  console.log(`[ProxyList] Loading proxy list from ${source.kind}: ${source.kind === "url" ? source.value : "(local)"}`);
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/plain",
-      },
-      signal: AbortSignal.timeout(15000), // 15s timeout
-    });
+    let text: string;
 
-    if (!res.ok) {
-      console.error(`[ProxyList] Failed to fetch: ${res.status} ${res.statusText}`);
-      return cachedProxies;
+    if (source.kind === "url") {
+      const res = await fetch(source.value, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "text/plain",
+        },
+        signal: AbortSignal.timeout(15000), // 15s timeout
+      });
+
+      if (!res.ok) {
+        console.error(`[ProxyList] Failed to fetch: ${res.status} ${res.statusText}`);
+        return cachedProxies;
+      }
+
+      text = await res.text();
+    } else if (source.kind === "file") {
+      text = readFileSync(source.value, "utf8");
+    } else {
+      text = source.value;
     }
-
-    const text = await res.text();
 
   // Try JSON format first: { "proxies": ["protocol://host:port:user:pass", ...] }
   let proxyLines: string[] = [];
@@ -200,7 +240,7 @@ export async function fetchProxyList(forceRefresh = false): Promise<ProxyEntry[]
 
   return proxies;
   } catch (err) {
-    console.error("[ProxyList] Error fetching proxy list:", err instanceof Error ? err.message : String(err));
+    console.error("[ProxyList] Error loading proxy list:", err instanceof Error ? err.message : String(err));
     return cachedProxies;
   }
 }
