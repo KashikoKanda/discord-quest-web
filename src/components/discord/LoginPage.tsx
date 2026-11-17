@@ -1172,8 +1172,9 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
  * ────────────────────────────────────────────────────────────── */
 
 export default function LoginPage() {
-  // Login thẳng (email + mật khẩu) là mặc định; Token/QR vẫn giữ cho ai cần.
-  const [tab, setTab] = useState<LoginTab>("email");
+  // UI hiện chỉ mount TokenLogin (Email/QR đã bỏ theo yêu cầu trước đó),
+  // nên giữ "token" để khối báo lỗi "Token hết hạn" vẫn hiển thị.
+  const [tab, setTab] = useState<LoginTab>("token");
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [proxyCountry, setProxyCountry] = useState("auto");
   const [error] = useState(() => {

@@ -4,6 +4,7 @@ import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { assignProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl } from "@/lib/proxyHelper";
+import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 
 /**
  * POST /api/auth/login
@@ -48,6 +49,9 @@ export async function POST(request: NextRequest) {
     // ─── Retry tối đa 3 proxy khác nhau ───
     const MAX_RETRIES = 3;
     let lastError = "";
+    // Có proxy thật sự được dùng chưa? Nếu pool rỗng thì login bằng token vẫn
+    // phải chạy (login thẳng), không chặn user bằng lỗi 503.
+    let usedProxy = false;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       // Pick next country
@@ -68,6 +72,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!proxy) continue;
+      usedProxy = true;
 
       console.log(`[Auth Login] Attempt ${attempt + 1}/${MAX_RETRIES}: proxy ${cc} ${proxy.host}:${proxy.port}`);
 
@@ -153,6 +158,69 @@ export async function POST(request: NextRequest) {
         releaseProxy(tokenId, cc);
         lastError = err.message;
         continue;
+      }
+    }
+
+    // ─── Không có proxy nào dùng được → login thẳng từ IP server ───
+    // (owner yêu cầu: token/login đi thẳng luôn, không phụ thuộc proxy list).
+    const allowDirect = process.env.DISABLE_DIRECT_FALLBACK !== "1";
+    if (!usedProxy && allowDirect) {
+      console.log("[Auth Login] Proxy pool rỗng → xác thực token trực tiếp từ IP server");
+      try {
+        const sessionUA = pickSessionUA(clientSessionId);
+        const directRes = await undiciFetch("https://discord.com/api/v10/users/@me", {
+          headers: {
+            ...buildDiscordHeaders(sessionUA.ua, sessionUA.superProps),
+            "Authorization": cleanToken,
+          },
+          headersTimeout: 12_000,
+          bodyTimeout: 12_000,
+        });
+
+        if (directRes.ok) {
+          const profile: any = await directRes.json();
+          if (profile && profile.id) {
+            const sid = clientSessionId || generateSessionId();
+            registerSession(tokenId, sid, userAgent);
+            return NextResponse.json({
+              success: true,
+              profile: {
+                id: profile.id,
+                username: profile.username,
+                global_name: profile.global_name || null,
+                discriminator: profile.discriminator || "0",
+                avatar: profile.avatar,
+                email: profile.email,
+                phone: profile.phone,
+                mfa_enabled: profile.mfa_enabled || false,
+                flags: profile.public_flags || profile.flags || 0,
+                premium_type: profile.premium_type || 0,
+                locale: profile.locale || "en-US",
+                verified: profile.verified || false,
+                banner: profile.banner,
+                accent_color: profile.accent_color,
+                avatar_decoration: profile.avatar_decoration,
+              },
+              sessionId: sid,
+              proxyAssigned: false,
+              proxyCountry: null,
+            });
+          }
+        } else if (directRes.status === 401) {
+          return NextResponse.json(
+            { error: "Token không hợp lệ hoặc đã hết hạn" },
+            { status: 401 },
+          );
+        } else if (directRes.status === 429) {
+          return NextResponse.json(
+            { success: false, error: "Discord đang rate-limit IP server, thử lại sau ít phút." },
+            { status: 429 },
+          );
+        }
+        lastError = `direct HTTP ${directRes.status}`;
+      } catch (err: any) {
+        lastError = err?.message || "direct request failed";
+        console.warn("[Auth Login] Direct verify failed:", lastError);
       }
     }
 
