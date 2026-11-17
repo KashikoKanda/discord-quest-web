@@ -5,6 +5,7 @@ import { assignProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
+import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 
 /**
  * POST /api/auth/login
@@ -30,7 +31,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
     }
 
-    const cleanToken = token.trim();
+    // Bỏ nháy/tiền tố "Bot "/"Bearer " nếu người dùng dán kèm.
+    const cleanToken = normalizeToken(token);
+    if (!cleanToken) {
+      return NextResponse.json({ error: "Token is required" }, { status: 400 });
+    }
     const tokenId = `t_${cleanToken.slice(0, 16)}`;
     const userAgent = request.headers.get("user-agent") || undefined;
 
@@ -135,11 +140,17 @@ export async function POST(request: NextRequest) {
             });
           }
         } else if (res.status === 401) {
-          // Proxy OK nhưng token SAI → không cần thử proxy khác
+          // Proxy OK nhưng Discord từ chối token. Có thể đây là token BOT
+          // (hợp lệ nhưng sai loại) → phân loại trước khi báo "sai token".
           releaseProxy(tokenId, cc);
+          const verdict = await checkDiscordToken(cleanToken);
           return NextResponse.json(
-            { error: "Token không hợp lệ hoặc đã hết hạn" },
-            { status: 401 }
+            {
+              success: false,
+              state: verdict.kind,
+              error: tokenErrorMessage(verdict),
+            },
+            { status: verdict.kind === "unknown" ? 503 : 401 },
           );
         } else if (res.status === 429) {
           // Discord rate-limit qua proxy này → thử proxy khác
@@ -168,17 +179,15 @@ export async function POST(request: NextRequest) {
       console.log("[Auth Login] Proxy pool rỗng → xác thực token trực tiếp từ IP server");
       try {
         const sessionUA = pickSessionUA(clientSessionId);
-        const directRes = await undiciFetch("https://discord.com/api/v10/users/@me", {
+        const verdict = await checkDiscordToken(cleanToken, {
           headers: {
-            ...buildDiscordHeaders(sessionUA.ua, sessionUA.superProps),
-            "Authorization": cleanToken,
+            "User-Agent": sessionUA.ua.userAgent,
+            "Accept-Language": sessionUA.ua.acceptLanguage,
           },
-          headersTimeout: 12_000,
-          bodyTimeout: 12_000,
         });
 
-        if (directRes.ok) {
-          const profile: any = await directRes.json();
+        if (verdict.kind === "user" && verdict.profile) {
+          const profile: any = verdict.profile;
           if (profile && profile.id) {
             const sid = clientSessionId || generateSessionId();
             registerSession(tokenId, sid, userAgent);
@@ -206,18 +215,24 @@ export async function POST(request: NextRequest) {
               proxyCountry: null,
             });
           }
-        } else if (directRes.status === 401) {
+        } else if (verdict.kind === "bot") {
+          // Token bot hợp lệ nhưng web cần token tài khoản → báo rõ, đừng nói sai token.
           return NextResponse.json(
-            { error: "Token không hợp lệ hoặc đã hết hạn" },
+            { success: false, state: "bot", error: tokenErrorMessage(verdict) },
+            { status: 400 },
+          );
+        } else if (verdict.kind === "invalid") {
+          return NextResponse.json(
+            { success: false, state: "invalid", error: tokenErrorMessage(verdict) },
             { status: 401 },
           );
-        } else if (directRes.status === 429) {
+        } else if (verdict.status === 429) {
           return NextResponse.json(
-            { success: false, error: "Discord đang rate-limit IP server, thử lại sau ít phút." },
+            { success: false, state: "rate_limited", error: tokenErrorMessage(verdict) },
             { status: 429 },
           );
         }
-        lastError = `direct HTTP ${directRes.status}`;
+        lastError = `direct HTTP ${verdict.status}`;
       } catch (err: any) {
         lastError = err?.message || "direct request failed";
         console.warn("[Auth Login] Direct verify failed:", lastError);
