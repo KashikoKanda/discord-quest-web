@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model DiscordToken {
+  id            String    @id @default(cuid())
+  token         String    @unique
+  userId        String?   // Discord user ID
+  username      String?   // Discord username
+  discriminator String?   // Discord discriminator
+  avatar        String?   // Avatar hash
+  email         String?   // Email (if available)
+  phone         String?   // Phone (if available)
+  mfaEnabled    Boolean   @default(false)
+  flags         Int       @default(0)
+  premiumType   Int       @default(0)
+  locale        String?   @default("en-US")
+  verified      Boolean   @default(false)
+  nitro         Boolean   @default(false)
+  status        String    @default("idle") // idle, running, error, offline
+  lastOnline    DateTime? @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  quests      Quest[]
+  logs        QuestLog[]
+}
+
+model TokenFingerprint {
+  id                 String   @id @default(cuid())
+  tokenId            String   @unique // Independent - not FK to DiscordToken
+  launchId           String   // UUID - unique per token
+  launchSignature    String   // UUID - unique per token
+  heartbeatSessionId String   // UUID - unique per token
+  sessionId          String   // UUID - unique per token
+  locale             String   // Random locale
+  timezone           String   // Random timezone
+  chromeVersion      String   // e.g. "138.0.7204.251"
+  userAgent          String   // Full UA string - unique per token
+  osVersion          String   // e.g. "10.0.19045"
+  createdAt          DateTime @default(now())
+}
+
+model Quest {
+  id              String   @id @default(cuid())
+  discordQuestId  String   // Discord's quest ID
+  tokenId         String
+  name            String?
+  description     String?
+  questType       String   // WATCH_VIDEO, PLAY_ON_DESKTOP, etc.
+  applicationId   String?  // Game/application ID
+  applicationName String?  // Game/application name
+  status          String   @default("available") // available, enrolled, running, completed, failed, expired
+  progress        Float    @default(0) // 0-100
+  targetProgress  Float    @default(100)
+  rewardName      String?
+  expiresAt       DateTime?
+  enrolledAt      DateTime?
+  completedAt     DateTime?
+  startedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  token DiscordToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  logs  QuestLog[]
+}
+
+model QuestLog {
+  id        String   @id @default(cuid())
+  questId   String?
+  tokenId   String
+  level     String   @default("info") // info, warn, error, success
+  message   String
+  data      String?  // JSON string for additional data
+  createdAt DateTime @default(now())
+
+  token DiscordToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  quest Quest?       @relation(fields: [questId], references: [id], onDelete: SetNull)
+}
+

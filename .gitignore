@@ -1,0 +1,15 @@
+skills/
+node_modules/
+
+# Legacy artifact that keeps reappearing from old tarballs — never commit it
+quest-flow-guide.txt
+*.tar.gz
+*.tar.gz.tar
+
+# local env / build output
+.env
+.env.local
+.next/
+*.db
+*.db-journal
+db/
