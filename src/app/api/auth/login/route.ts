@@ -149,6 +149,7 @@ export async function POST(request: NextRequest) {
               success: false,
               state: verdict.kind,
               error: tokenErrorMessage(verdict),
+              discord: verdict.detail || null,
             },
             { status: verdict.kind === "unknown" ? 503 : 401 },
           );
@@ -223,7 +224,7 @@ export async function POST(request: NextRequest) {
           );
         } else if (verdict.kind === "invalid") {
           return NextResponse.json(
-            { success: false, state: "invalid", error: tokenErrorMessage(verdict) },
+            { success: false, state: "invalid", error: tokenErrorMessage(verdict), discord: verdict.detail || null },
             { status: 401 },
           );
         } else if (verdict.status === 429) {

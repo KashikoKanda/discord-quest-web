@@ -121,7 +121,10 @@ export function tokenErrorMessage(result: TokenCheckResult): string {
     return "Đây là token BOT (lấy ở Developer Portal). Web cần token TÀI KHOẢN (user token) — token bot không thể nhận quest hộ tài khoản.";
   }
   if (result.kind === "invalid") {
-    return "Token không hợp lệ hoặc đã hết hạn";
+    // 401 từ Discord cho token đúng định dạng = token đã bị thu hồi/mất hiệu lực
+    // (đăng xuất, đổi mật khẩu, "Log Out All Devices", hoặc token bị lộ nơi công khai
+    // nên Discord tự revoke). Không phải lỗi đọc token của web.
+    return "Discord từ chối token này (401). Token đúng định dạng nhưng đã bị thu hồi hoặc hết hạn — thường do đăng xuất, đổi mật khẩu, hoặc token bị dán ở nơi công khai. Lấy token mới rồi dán trực tiếp vào trang web.";
   }
   if (result.status === 429) {
     return "Discord đang rate-limit IP server, thử lại sau ít phút.";
