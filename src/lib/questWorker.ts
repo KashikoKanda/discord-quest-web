@@ -75,6 +75,8 @@ interface TokenState {
   // one at a time. The auto-quest loop honours this too — it used to always run
   // sequentially, which made "Multi" look broken.
   multiQuest: boolean;
+  /** Lúc token được nạp vào worker (dùng cho chế độ warm-up token mới). */
+  registeredAt?: number;
 }
 
 // How often the auto-quest loop re-checks for unfinished quests
@@ -246,7 +248,9 @@ async function processTokenQueue(tokenId: string): Promise<void> {
     // Trước: 500-800ms → quá nhanh → 50 API calls trong 30s = bot pattern
     // Sau: 1500-3000ms → giống người thật
     // 18/11: Discord siết detection → giãn thêm, tránh pattern "máy chạy"
-    await sleep(rnd(2500, 5500));
+    const st = getGlobalState().get(tokenId);
+    const warm = Date.now() - (st?.registeredAt || 0) < 15 * 60 * 1000;
+    await sleep(warm ? rnd(4000, 7000) : rnd(2500, 5500));
   }
 
   state.queueProcessing = false;
@@ -1076,14 +1080,19 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
     if (multiQuest) {
       // ─── MULTI MODE: Parallel (như ban đầu) ───
       // Tất cả quest chạy song song cùng lúc
+      // Token vừa login (<15 phút) chạy "warm-up": ít song song hơn và chậm hơn.
+      // Token mới chưa có lịch sử phiên, bắn dồn dập ngay sau khi tạo là cách
+      // nhanh nhất để Discord thu hồi.
+      const isWarmUp = Date.now() - (state.registeredAt || 0) < 15 * 60 * 1000;
+      const concurrency = isWarmUp ? Math.min(2, QUEST_CONCURRENCY) : QUEST_CONCURRENCY;
       addLog(
         tokenId,
         "info",
-        `Đang làm ${doableQuests.length} quest song song (tối đa ${QUEST_CONCURRENCY} quest cùng lúc)...`,
+        `Đang làm ${doableQuests.length} quest song song (tối đa ${concurrency} quest cùng lúc${isWarmUp ? ", token mới nên chạy chậm" : ""})...`,
       );
       await runWithConcurrency(
         doableQuests as Record<string, unknown>[],
-        QUEST_CONCURRENCY,
+        concurrency,
         (quest) => processQuest(tokenId, quest),
       );
     } else {
@@ -1250,6 +1259,7 @@ export const QuestWorker = {
     }
     state.set(tokenId, {
       token,
+      registeredAt: Date.now(),
       status: "idle",
       isVerified,
       questProgress: new Map(),

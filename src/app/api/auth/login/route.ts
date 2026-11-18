@@ -58,10 +58,28 @@ export async function POST(request: NextRequest) {
     const availableCountries = Array.from(
       new Set(pool.map((p) => (p.countryCode || "").toUpperCase()).filter(Boolean)),
     );
+
+    // Quốc gia người dùng đang login. Token mới tạo ở VN mà bị dùng từ IP CA/Mỹ
+    // trong vài giây là kiểu session bị đánh cắp → Discord thu hồi. Vì vậy ưu
+    // tiên proxy CÙNG nước với người dùng; chỉ khi pool không có mới dùng nước khác.
+    const clientCountry = await getClientCountry(request.headers).catch(() => null);
+    if (clientCountry) {
+      console.log(`[Auth Login] Người dùng login từ ${clientCountry} · pool có: ${availableCountries.join(",") || "rỗng"}`);
+      if (!availableCountries.includes(clientCountry)) {
+        console.warn(
+          `[Auth Login] ⚠ Pool KHÔNG có proxy ${clientCountry} → token mới sẽ đi từ IP nước khác, ` +
+            `Discord rất dễ coi là phiên bị đánh cắp. Thêm proxy ${clientCountry} vào PROXY_LIST_B64.`,
+        );
+      }
+    }
+
     let countriesToTry: string[];
     if (proxyCountry && proxyCountry !== "auto") {
       const wanted = proxyCountry.toUpperCase();
       countriesToTry = [wanted, ...availableCountries.filter((c) => c !== wanted)];
+    } else if (clientCountry && availableCountries.includes(clientCountry)) {
+      // cùng nước trước, các nước khác sau
+      countriesToTry = [clientCountry, ...availableCountries.filter((c) => c !== clientCountry)];
     } else {
       countriesToTry = [...availableCountries].sort(() => Math.random() - 0.5);
     }
