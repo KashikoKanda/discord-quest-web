@@ -149,7 +149,9 @@ export default function Dashboard() {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const checkTokenExpired = useCallback((res: Response, data?: Record<string, unknown>) => {
-    if (res.status === 401 || data?.tokenExpired) {
+    // CHỈ logout khi server xác nhận token chết. 401 trần có thể chỉ là proxy
+    // bị Discord từ chối tạm thời → trước đây web đá user ra và báo "bị thu hồi".
+    if (data?.tokenExpired === true) {
       try { sessionStorage.setItem("dq_token_expired", "1"); } catch { /* ignore */ }
       logout();
       return true;
@@ -196,7 +198,9 @@ export default function Dashboard() {
         fetch(`/api/quests/status?tokenId=${tokenId}`).catch(() => null),
         fetch(`/api/quests/logs?tokenId=${tokenId}`).catch(() => null),
       ]);
-      if (statusRes && !statusRes.ok && statusRes.status === 401) {
+      if (statusRes && statusRes.status === 401) {
+        const statusBody = await statusRes.clone().json().catch(() => null);
+        if (!(statusBody as { tokenExpired?: boolean } | null)?.tokenExpired) return;
         try {
           const errData = await statusRes.json();
           if (errData?.tokenExpired) { checkTokenExpired(statusRes, errData); return; }

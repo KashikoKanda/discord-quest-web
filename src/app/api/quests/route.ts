@@ -17,6 +17,7 @@ import {
   isTokenExpiredResponse,
 } from "@/lib/discord";
 import { QuestWorker } from "@/lib/questWorker";
+import { checkDiscordToken } from "@/lib/tokenCheck";
 
 function getQuestTypeLabel(type: string): string {
   switch (type) {
@@ -33,8 +34,12 @@ function getQuestTypeLabel(type: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  // khai báo ngoài try để catch còn dùng được token khi kiểm tra 401
+  let token = "";
   try {
-    const { token, isVerified, autoClaim } = await request.json();
+    const body = await request.json();
+    token = typeof body?.token === "string" ? body.token : "";
+    const { isVerified, autoClaim } = body;
 
     if (!token) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
@@ -148,8 +153,17 @@ export async function POST(request: NextRequest) {
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Check if token expired (Discord returns 401)
+    // 401 từ một request qua proxy CHƯA chứng minh token chết: IP proxy có thể
+    // bị gắn cờ. Xác nhận trực tiếp với Discord trước khi báo token hết hạn —
+    // trước đây chỗ này làm web tự logout và báo "token bị thu hồi" oan.
     if (msg.includes("401")) {
+      const verdict = await checkDiscordToken(token).catch(() => null);
+      if (verdict?.kind === "user") {
+        return NextResponse.json(
+          { error: "Proxy tạm thời bị Discord từ chối, thử lại sau ít giây.", proxyError: true },
+          { status: 503 },
+        );
+      }
       return NextResponse.json({ error: "Token hết hạn", tokenExpired: true }, { status: 401 });
     }
     return NextResponse.json({ error: msg }, { status: 500 });
