@@ -1031,7 +1031,6 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
           {status === "pending_scan" && (
             <div>
               <p className="text-[12px] text-white/80 font-medium">Quét mã QR bằng Discord</p>
-              <p className="text-[10px] text-white/40 mt-0.5">Mở Discord mobile → User Settings → Scan QR Code</p>
               {secondsLeft > 0 && (
                 <p className={`mt-1.5 text-[10px] font-mono ${secondsLeft < 60 ? "text-[#F5B544]" : "text-white/40"}`}>
                   ⏱ QR hết hạn sau {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
@@ -1142,16 +1141,6 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
         )}
       </div>
 
-      {/* Helper steps */}
-      <div className="mt-4 pt-4 border-t border-white/[0.06]">
-        <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2">Hướng dẫn</p>
-        <ol className="space-y-1.5 text-[10px] text-white/50">
-          <li className="flex gap-2"><span className="text-[#5865F2] font-bold">1.</span> Mở app Discord trên điện thoại</li>
-          <li className="flex gap-2"><span className="text-[#5865F2] font-bold">2.</span> Bấm avatar ở góc dưới phải → <span className="text-white/80">User Settings ⚙️</span> → <span className="text-white/80">Scan QR Code</span></li>
-          <li className="flex gap-2"><span className="text-[#5865F2] font-bold">3.</span> Quét mã QR ở trên → bấm <span className="text-[#3DD68C] font-semibold">"Yes, log me in"</span> trên mobile</li>
-        </ol>
-      </div>
-
       <style jsx>{`
         @keyframes qr-pulse {
           0%, 100% { opacity: 0.3; transform: scale(1); }
@@ -1175,7 +1164,8 @@ export default function LoginPage() {
   // nên giữ "token" để khối báo lỗi "Token hết hạn" vẫn hiển thị.
   const [tab, setTab] = useState<LoginTab>("token");
   const [loginSuccess, setLoginSuccess] = useState(false);
-  const [proxyCountry, setProxyCountry] = useState("auto");
+  // UI chọn server đã bỏ — luôn để "auto" (server tự chọn proxy tốt nhất)
+  const [proxyCountry] = useState("auto");
   const [error] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1253,7 +1243,7 @@ export default function LoginPage() {
             className="text-white/50 text-base lg:text-lg leading-relaxed max-w-md mb-8 animate-fade-up"
             style={{ animationDelay: "150ms" }}
           >
-            Đăng nhập bằng Token, Email hoặc mã QR — hệ thống chạy ngầm trên server,
+            Đăng nhập bằng Token hoặc mã QR — hệ thống chạy ngầm trên server,
             đóng tab vẫn tiếp tục làm quest.
           </p>
 
@@ -1330,23 +1320,6 @@ export default function LoginPage() {
               <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
             )}
 
-            {/* Proxy Selector */}
-            <div className="mt-4">
-              <ProxySelector value={proxyCountry} onChange={setProxyCountry} />
-            </div>
-
-            {/* Quick info */}
-            <div className="mt-5 pt-4 border-t border-white/[0.06] flex items-center justify-between text-[10px]">
-              <span className="text-white/40">Cần giúp?</span>
-              <a
-                href="https://discord.com/channels/@me"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[#5865F2] hover:text-[#7C8FFF] transition-colors"
-              >
-                Hướng dẫn <ChevronRight className="w-3 h-3" />
-              </a>
-            </div>
           </div>
         </div>
       </main>
