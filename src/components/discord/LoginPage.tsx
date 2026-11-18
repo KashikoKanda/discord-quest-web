@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   ShieldCheck, Eye, EyeOff, AlertTriangle, ArrowRight,
   Zap, Clock, Trophy, Lock, Fingerprint,
-  ChevronRight, KeyRound, Globe, Loader2, Check, MapPin,
+  ChevronRight, KeyRound, Globe, Loader2, Check, MapPin, QrCode, Smartphone, CheckCircle2, RefreshCw,
 } from "lucide-react";
 
 /* Discord SVG logo path (preserved per hard constraint #5) */
