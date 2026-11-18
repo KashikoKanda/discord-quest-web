@@ -171,6 +171,12 @@ export async function connectGateway(
     return true;
   }
 
+  // Gateway phải đi CÙNG IP với REST của token này. Trước đây gateway nối trực
+  // tiếp từ IP Render còn REST qua proxy → Identify và REST lệch IP, Discord
+  // đóng phiên (4004) và token bị coi như thu hồi.
+  const { getStickyWsAgent } = await import("./proxyHelper");
+  const wsAgent = await getStickyWsAgent(tokenId).catch(() => null);
+
   return new Promise((resolve) => {
     try {
       const url = state.resumeUrl || GATEWAY_URL;
@@ -178,7 +184,8 @@ export async function connectGateway(
         headers: {
           "User-Agent": state.fingerprint.user_agent,
         },
-      });
+        ...(wsAgent ? { agent: wsAgent } : {}),
+      } as never);
 
       state.ws = ws;
       let resolved = false;

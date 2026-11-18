@@ -400,7 +400,11 @@ export async function discordFetch(
     ...customHeaders,
   };
 
-  const res = await fetch(url, { ...options, headers });
+  // Đi qua proxy ĐÃ GHIM của token để cả phiên chỉ dùng một IP. Trước đây hàm này
+  // gọi fetch() trần (IP server) trong khi login/enroll lại qua proxy ngẫu nhiên →
+  // Discord thấy token xuất hiện từ nhiều IP và thu hồi phiên.
+  const { fetchWithTokenProxy } = await import("./proxyHelper");
+  const res = await fetchWithTokenProxy(tokenId, url, { ...options, headers });
   return res;
 }
 

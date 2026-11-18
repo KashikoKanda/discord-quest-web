@@ -51,7 +51,12 @@ export async function POST(request: NextRequest) {
 
     for (const row of tokens) {
       try {
-        const res = await discordFetch(row.token, "/users/@me");
+        const res = await discordFetch(
+          row.token,
+          "/users/@me",
+          {},
+          `t_${String(row.token).slice(0, 16)}`,
+        );
 
         if (isTokenExpiredResponse(res)) {
           await db.discordToken.delete({ where: { id: row.id } });

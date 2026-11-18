@@ -199,3 +199,140 @@ export async function getWsProxyAgent(): Promise<{
     return { agent: null, proxy: null };
   }
 }
+
+// ──────────────────────────────────────────────────
+// Sticky proxy per token — MỘT IP cho cả phiên
+// ──────────────────────────────────────────────────
+/**
+ * Vì sao cần: trước đây MỖI request lại bốc 1 proxy ngẫu nhiên, gateway thì
+ * nối trực tiếp từ IP Render. Cùng một token vì thế xuất hiện từ hàng chục IP
+ * khác nhau trong vài giây → Discord coi là session bị chiếm và thu hồi token
+ * (401 / gateway 4004). Giờ mỗi token ghim đúng 1 proxy: login, REST, enroll và
+ * gateway đều đi qua cùng một IP cho đến khi proxy đó chết.
+ */
+export interface StickyProxy {
+  proxy: ProxyEntry;
+  proxyUrl: string;
+  agent: ProxyAgent;
+  wsAgent: HttpsProxyAgent<string>;
+  since: number;
+}
+
+declare global {
+  var dqaStickyProxies: Map<string, StickyProxy> | undefined;
+}
+
+function stickyMap(): Map<string, StickyProxy> {
+  if (!globalThis.dqaStickyProxies) globalThis.dqaStickyProxies = new Map();
+  return globalThis.dqaStickyProxies;
+}
+
+function makeSticky(proxy: ProxyEntry): StickyProxy {
+  const proxyUrl = buildProxyUrl(proxy);
+  return {
+    proxy,
+    proxyUrl,
+    agent: new ProxyAgent(proxyUrl),
+    wsAgent: new HttpsProxyAgent(proxyUrl),
+    since: Date.now(),
+  };
+}
+
+/** Ghim một proxy cụ thể cho token (dùng sau khi login thành công qua proxy đó). */
+export function bindStickyProxy(tokenId: string, proxy: ProxyEntry): StickyProxy {
+  const previous = stickyMap().get(tokenId);
+  if (previous) {
+    try { previous.agent.close(); } catch { /* ignore */ }
+  }
+  const binding = makeSticky(proxy);
+  stickyMap().set(tokenId, binding);
+  console.log(
+    `[ProxySticky] ${tokenId.slice(0, 12)} ghim ${proxy.countryCode || "?"} ${proxy.host}:${proxy.port}`,
+  );
+  return binding;
+}
+
+/** Lấy proxy đã ghim của token, chưa có thì ghim proxy ngẫu nhiên. */
+export async function getStickyProxy(tokenId?: string): Promise<StickyProxy | null> {
+  if (!tokenId) return null;
+  const existing = stickyMap().get(tokenId);
+  if (existing) return existing;
+  const proxy = await getRandomPreferredProxy();
+  if (!proxy) return null;
+  return bindStickyProxy(tokenId, proxy);
+}
+
+/** Proxy của token chết → đổi sang proxy khác và ghim lại. */
+export async function rotateStickyProxy(tokenId: string): Promise<StickyProxy | null> {
+  const old = stickyMap().get(tokenId);
+  if (old) {
+    try { old.agent.close(); } catch { /* ignore */ }
+    stickyMap().delete(tokenId);
+    console.warn(
+      `[ProxySticky] ${tokenId.slice(0, 12)} đổi proxy (${old.proxy.host}:${old.proxy.port} lỗi)`,
+    );
+  }
+  const proxy = await getRandomPreferredProxy();
+  if (!proxy) return null;
+  return bindStickyProxy(tokenId, proxy);
+}
+
+/** Agent WebSocket (https-proxy-agent) đã ghim cho token — gateway dùng chung IP với REST. */
+export async function getStickyWsAgent(tokenId: string): Promise<HttpsProxyAgent<string> | null> {
+  const binding = await getStickyProxy(tokenId);
+  return binding?.wsAgent ?? null;
+}
+
+/**
+ * fetch() đi qua proxy đã ghim của token. Proxy lỗi → đổi proxy và thử lại 1 lần,
+ * cuối cùng mới gửi trực tiếp để worker không chết giữa chừng.
+ */
+export async function fetchWithTokenProxy(
+  tokenId: string | undefined,
+  url: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const allowDirect = process.env.DISABLE_DIRECT_FALLBACK !== "1";
+  const direct = async () => {
+    const directOptions: any = { ...options };
+    directOptions.headersTimeout = 15_000;
+    directOptions.bodyTimeout = 15_000;
+    return (await undiciFetch(url, directOptions)) as unknown as Response;
+  };
+
+  if (!tokenId) return direct();
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const binding = attempt === 0
+      ? await getStickyProxy(tokenId)
+      : await rotateStickyProxy(tokenId);
+    if (!binding) {
+      if (!allowDirect) throw new Error("Proxy pool rỗng — không thể gửi request.");
+      return direct();
+    }
+    try {
+      const fetchOptions: any = { ...options };
+      fetchOptions.dispatcher = binding.agent;
+      fetchOptions.headersTimeout = 15_000;
+      fetchOptions.bodyTimeout = 15_000;
+      const res = (await undiciFetch(url, fetchOptions)) as unknown as Response;
+      // 401 ở lần đầu: có thể IP proxy này đang bị Discord gắn cờ, không chắc
+      // token đã chết → đổi proxy rồi thử lại một lần trước khi kết luận.
+      if (res.status === 401 && attempt === 0) {
+        console.warn(
+          `[ProxySticky] ${tokenId.slice(0, 12)} 401 qua ${binding.proxy.host}:${binding.proxy.port} → thử IP khác`,
+        );
+        continue;
+      }
+      return res;
+    } catch (err: any) {
+      console.warn(
+        `[ProxySticky] ${tokenId.slice(0, 12)} ✗ ${binding.proxy.host}:${binding.proxy.port} — ${err.message}`,
+      );
+    }
+  }
+
+  if (!allowDirect) throw new Error("Proxy đã ghim không dùng được — thử lại sau.");
+  console.warn(`[ProxySticky] ${tokenId.slice(0, 12)} hết proxy → gửi trực tiếp từ IP server`);
+  return direct();
+}

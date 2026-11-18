@@ -100,7 +100,13 @@ export async function GET(request: NextRequest) {
   // 3. Thử với user token (nếu có)
   if (userToken) {
     try {
-      const res = await discordFetch(userToken.trim(), "/users/@me/guilds");
+      const cleanUserToken = userToken.trim();
+      const res = await discordFetch(
+        cleanUserToken,
+        "/users/@me/guilds",
+        {},
+        `t_${cleanUserToken.slice(0, 16)}`,
+      );
       if (res.ok) {
         const guilds = await res.json() as Array<{
           id: string;

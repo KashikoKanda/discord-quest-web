@@ -3,7 +3,7 @@ import { initBuildVersion } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
-import { buildProxyUrl } from "@/lib/proxyHelper";
+import { buildProxyUrl, getAllProxies, bindStickyProxy } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 
@@ -50,15 +50,22 @@ export async function POST(request: NextRequest) {
     };
     const sessionUserAgent = uaSession.ua.userAgent;
 
-    // Danh sách country để thử
+    // Danh sách country để thử — CHỈ những country thật sự có proxy trong pool.
+    // Trước đây code thử US/GB/SG... trong khi pool chỉ có CA → cả 3 lần đều
+    // "proxy pool rỗng", login rơi về IP server, rồi worker lại chạy qua proxy
+    // → token đổi IP liên tục và bị Discord thu hồi.
+    const pool = await getAllProxies().catch(() => []);
+    const availableCountries = Array.from(
+      new Set(pool.map((p) => (p.countryCode || "").toUpperCase()).filter(Boolean)),
+    );
     let countriesToTry: string[];
     if (proxyCountry && proxyCountry !== "auto") {
-      // User chọn 1 country → thử country đó + fallback preferred
-      countriesToTry = [proxyCountry.toUpperCase(), "US", "GB", "JP", "SG", "DE", "CA", "AU", "FR"];
+      const wanted = proxyCountry.toUpperCase();
+      countriesToTry = [wanted, ...availableCountries.filter((c) => c !== wanted)];
     } else {
-      // Auto → thử preferred countries theo thứ tự random
-      countriesToTry = ["US", "GB", "CA", "SG", "JP", "AU", "DE", "FR"].sort(() => Math.random() - 0.5);
+      countriesToTry = [...availableCountries].sort(() => Math.random() - 0.5);
     }
+    if (countriesToTry.length === 0) countriesToTry = ["CA"];
 
     // ─── Retry tối đa 3 proxy khác nhau ───
     const MAX_RETRIES = 3;
@@ -113,6 +120,9 @@ export async function POST(request: NextRequest) {
 
           if (profile && profile.id) {
             const sid = clientSessionId || generateSessionId();
+            // Ghim luôn proxy vừa login cho token: REST/enroll/gateway sau đó đi
+            // đúng IP này, không đổi IP giữa phiên nữa.
+            bindStickyProxy(tokenId, proxy);
             registerSession(tokenId, sid, sessionUserAgent);
 
             return NextResponse.json({
@@ -140,10 +150,28 @@ export async function POST(request: NextRequest) {
             });
           }
         } else if (res.status === 401) {
-          // Proxy OK nhưng Discord từ chối token. Có thể đây là token BOT
-          // (hợp lệ nhưng sai loại) → phân loại trước khi báo "sai token".
+          // 401 có thể do PROXY (sai auth / hết hạn mức) chứ không phải token.
+          // Discord luôn trả JSON {"message": ..., "code": 0}; proxy trả text/HTML.
+          // Nếu không phải JSON của Discord → đổi proxy khác, đừng doạ user.
+          const bodyText = await res.text().catch(() => "");
+          let isDiscord401 = false;
+          try {
+            const parsed = JSON.parse(bodyText);
+            isDiscord401 = typeof parsed?.message === "string" || typeof parsed?.code === "number";
+          } catch {
+            isDiscord401 = false;
+          }
+          if (!isDiscord401) {
+            releaseProxy(tokenId, cc);
+            lastError = `Proxy ${cc} trả 401 (lỗi proxy, không phải token)`;
+            console.warn(`[Auth Login] Proxy ${cc} trả 401 không phải JSON Discord → thử proxy khác`);
+            continue;
+          }
+
+          // Discord thật sự từ chối token. Có thể đây là token BOT (hợp lệ nhưng
+          // sai loại) → phân loại trước khi báo "sai token".
           releaseProxy(tokenId, cc);
-          const verdict = await checkDiscordToken(cleanToken);
+          const verdict = await checkDiscordToken(cleanToken, { dispatcher: agent });
           return NextResponse.json(
             {
               success: false,

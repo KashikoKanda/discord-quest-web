@@ -82,10 +82,10 @@ const AUTO_LOOP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes (was 1 minute) — tr�
 
 /**
  * How many quests one account may run at the same time in multi mode.
- * Mỗi quest chỉ đẩy vài request mỗi 2-5s nên 8 là mức an toàn cho tài khoản
- * có hàng chục quest mà không dồn dập API.
+ * Mỗi quest đẩy ~1 request/2s; 6 quest song song ≈ 3 request/s là ngưỡng còn
+ * giống người dùng thật. Đẩy cao hơn dễ bị Discord gắn cờ và thu hồi token.
  */
-const QUEST_CONCURRENCY = Math.max(1, Number(process.env.QUEST_CONCURRENCY || 8));
+const QUEST_CONCURRENCY = Math.max(1, Number(process.env.QUEST_CONCURRENCY || 6));
 
 /** Chạy `worker` trên từng item với tối đa `limit` việc song song. */
 async function runWithConcurrency<T>(
@@ -390,7 +390,8 @@ async function doWatchVideoQuest(
       break;
     }
 
-    await sleep(interval * 1000);
+    // Jitter ±0.8s: nhịp đều tăm tắp mỗi 2.000s là dấu hiệu bot rõ ràng.
+    await sleep(interval * 1000 + Math.floor(Math.random() * 1600) - 800);
   }
 
   // aiko: If not completed after loop, send final video-progress with secondsNeeded

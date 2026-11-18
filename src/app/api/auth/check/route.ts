@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discordFetch, isTokenExpiredResponse } from "@/lib/discord";
 import { db } from "@/lib/db";
+import { normalizeToken } from "@/lib/tokenCheck";
 
 /**
  * POST /api/auth/check
@@ -15,7 +16,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
     }
 
-    const res = await discordFetch(token.trim(), "/users/@me");
+    // Đi qua proxy đã ghim của token: gọi trực tiếp từ IP Render trong khi phiên
+    // đang chạy qua proxy khiến Discord trả 401 và web xoá token oan ("bị thu hồi").
+    const cleanToken = normalizeToken(token);
+    const tokenId = `t_${cleanToken.slice(0, 16)}`;
+    const res = await discordFetch(cleanToken, "/users/@me", {}, tokenId);
 
     if (isTokenExpiredResponse(res)) {
       // Token dead — clean up DB
