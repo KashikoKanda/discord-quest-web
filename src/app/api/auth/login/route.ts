@@ -6,6 +6,7 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl, getAllProxies, bindStickyProxy } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
+import { getClientCountry } from "@/lib/geoCountry";
 
 /**
  * POST /api/auth/login
@@ -308,7 +309,9 @@ export async function POST(request: NextRequest) {
       },
       { status: 503 }
     );
-  } catch {
+  } catch (err: unknown) {
+    // Log thật sự — trước đây catch trần nuốt lỗi nên chỉ thấy "Invalid request"
+    console.error("[Auth Login] Lỗi không mong đợi:", err instanceof Error ? err.stack || err.message : String(err));
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 }
