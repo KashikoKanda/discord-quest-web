@@ -40,6 +40,7 @@ import { fetchWithProxy, getWsProxyAgent } from "./proxyHelper";
 export type QRState =
   | "pending_scan"      // QR displayed, waiting for scan
   | "pending_confirm"   // User scanned, waiting for tap "Yes" on mobile
+  | "captcha_required"  // Discord asked for hCaptcha on the ticket exchange
   | "success"           // Got token, decrypted
   | "expired"           // WS closed / timed out / cancelled
   | "error";            // Unexpected error
@@ -48,6 +49,23 @@ export interface QRRawLog {
   ts: number;
   level: "info" | "warn" | "error" | "success";
   message: string;
+}
+
+/** Discord captcha challenge returned by /remote-auth/login. */
+export interface QRCaptcha {
+  sitekey: string;
+  rqdata?: string;
+  rqtoken?: string;
+  sessionId?: string;
+}
+
+export class CaptchaRequiredError extends Error {
+  captcha: QRCaptcha;
+  constructor(captcha: QRCaptcha) {
+    super("captcha-required");
+    this.name = "CaptchaRequiredError";
+    this.captcha = captcha;
+  }
 }
 
 export interface QRSession {
@@ -65,6 +83,12 @@ export interface QRSession {
   cleanupTimer: NodeJS.Timeout | null;
   /** Chronological log of all session events — surfaced to frontend on poll. */
   logs: QRRawLog[];
+  /** RSA private key — kept so a captcha retry can still decrypt the token. */
+  privateKey: crypto.KeyObject | null;
+  /** Ticket from pending_login, reused when retrying after a captcha. */
+  pendingTicket: string | null;
+  /** Current captcha challenge, when Discord is asking for one. */
+  captcha: QRCaptcha | null;
 }
 
 const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes max
@@ -143,21 +167,59 @@ async function generateQrPng(fingerprint: string): Promise<string> {
 }
 
 /** POST /users/@me/remote-auth/login to exchange ticket for encrypted token.
- *  Uses a fresh random UA per call + proxy pool to avoid IP rate-limit. */
-async function exchangeTicketForToken(ticket: string): Promise<string> {
+ *  Uses a fresh random UA per call + proxy pool to avoid IP rate-limit.
+ *  If Discord answers 400 with captcha-required, throws CaptchaRequiredError so
+ *  the caller can show the challenge and retry with the solved hCaptcha token. */
+async function exchangeTicketForToken(
+  ticket: string,
+  captchaToken?: string,
+  captchaData?: QRCaptcha | null,
+): Promise<string> {
   const { ua, superProps } = pickRandomUABundle();
   const headers = buildDiscordHeaders(ua, superProps);
+
+  const body: Record<string, unknown> = { ticket };
+  if (captchaToken) {
+    // Discord expects captcha_key as an array; rqdata/rqtoken must come from the
+    // challenge so the solved token is bound to this exact captcha request.
+    body.captcha_key = [captchaToken];
+    if (captchaData?.rqdata) body.captcha_rqdata = captchaData.rqdata;
+    if (captchaData?.rqtoken) body.captcha_rqtoken = captchaData.rqtoken;
+  }
+
   // Sử dụng proxy pool — tránh IP server bị Discord rate-limit
   const res = await fetchWithProxy("https://discord.com/api/v9/users/@me/remote-auth/login", {
     method: "POST",
     headers,
-    body: JSON.stringify({ ticket }),
+    body: JSON.stringify(body),
   });
+  const txt = await res.text().catch(() => "");
+
   if (!res.ok) {
-    const txt = await res.text().catch(() => "");
+    try {
+      const parsed = JSON.parse(txt) as {
+        captcha_key?: string[];
+        captcha_sitekey?: string;
+        captcha_rqdata?: string;
+        captcha_rqtoken?: string;
+        captcha_session_id?: string;
+      };
+      if (Array.isArray(parsed?.captcha_key) && parsed.captcha_key.includes("captcha-required")) {
+        throw new CaptchaRequiredError({
+          sitekey: parsed.captcha_sitekey || "",
+          rqdata: parsed.captcha_rqdata,
+          rqtoken: parsed.captcha_rqtoken,
+          sessionId: parsed.captcha_session_id,
+        });
+      }
+    } catch (e) {
+      if (e instanceof CaptchaRequiredError) throw e;
+    }
     throw new Error(`remote-auth/login ${res.status}: ${txt}`);
   }
-  const data = await res.json() as { encrypted_token?: string };
+
+  let data: { encrypted_token?: string } = {};
+  try { data = JSON.parse(txt) as { encrypted_token?: string }; } catch { /* fall through */ }
   if (!data.encrypted_token) {
     throw new Error("remote-auth/login: missing encrypted_token");
   }
@@ -334,6 +396,9 @@ export async function startQRSession(): Promise<{
     heartbeatTimer: null,
     cleanupTimer: null,
     logs: [],
+    privateKey,
+    pendingTicket: null,
+    captcha: null,
   };
   sessions.set(sessionId, session);
   pushLog(session, "info", `Session created — RSA-2048 keypair generated (pubkey ${publicKeyB64.length}B base64)`);
@@ -499,6 +564,7 @@ export async function startQRSession(): Promise<{
                 throw new Error("pending_login: missing ticket");
               }
               pushLog(session, "info", `Mobile confirmed — got ticket (${ticket.length} chars), exchanging for token...`);
+              session.pendingTicket = ticket;
               const encryptedToken = await exchangeTicketForToken(ticket);
               const token = decryptWithPrivateKey(privateKey, encryptedToken).toString("utf8");
               session.token = token;
@@ -506,10 +572,24 @@ export async function startQRSession(): Promise<{
               pushLog(session, "success", `Token decrypted successfully (${token.length} chars) — login complete`);
               setTimeout(() => cleanupSession(sessionId, "success"), 5_000);
             } catch (err: any) {
-              pushLog(session, "error", `Token exchange failed: ${err.message}`);
-              session.state = "error";
-              session.errorMessage = `Token exchange: ${err.message}`;
-              setTimeout(() => cleanupSession(sessionId, "token-exchange-failed"), 5_000);
+              if (err instanceof CaptchaRequiredError) {
+                // Discord wants a human to solve hCaptcha before handing over the token.
+                session.state = "captcha_required";
+                session.captcha = err.captcha;
+                session.lastActivity = Date.now();
+                pushLog(session, "warn", "Discord yêu cầu captcha (hCaptcha) — chờ người dùng giải");
+                // Keep the session (and its RSA key + ticket) alive long enough to solve.
+                if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
+                session.cleanupTimer = setTimeout(
+                  () => cleanupSession(sessionId, "captcha-timeout"),
+                  4 * 60 * 1000,
+                );
+              } else {
+                pushLog(session, "error", `Token exchange failed: ${err.message}`);
+                session.state = "error";
+                session.errorMessage = `Token exchange: ${err.message}`;
+                setTimeout(() => cleanupSession(sessionId, "token-exchange-failed"), 5_000);
+              }
             }
             resolvePending();
             break;
@@ -600,6 +680,7 @@ export function getQRSessionState(sessionId: string): {
   qrImage: string | null;
   token: string | null;
   errorMessage: string | null;
+  captcha: QRCaptcha | null;
   logs: QRRawLog[];
 } | null {
   const s = sessions.get(sessionId);
@@ -609,8 +690,52 @@ export function getQRSessionState(sessionId: string): {
     qrImage: s.qrImage,
     token: s.token,
     errorMessage: s.errorMessage,
+    captcha: s.captcha,
     logs: s.logs.slice(-20),
   };
+}
+
+/**
+ * Retry the ticket exchange with an hCaptcha token solved by the user.
+ * Returns the decrypted Discord token on success, or a fresh captcha
+ * challenge if Discord rejects the solution.
+ */
+export async function submitQRCaptcha(
+  sessionId: string,
+  captchaToken: string,
+): Promise<
+  | { ok: true; token: string }
+  | { ok: false; captcha?: QRCaptcha; error?: string }
+> {
+  const s = sessions.get(sessionId);
+  if (!s) return { ok: false, error: "Phiên QR đã hết hạn — tạo mã mới" };
+  if (!s.pendingTicket) return { ok: false, error: "Chưa có ticket — quét lại mã QR" };
+  if (!s.privateKey) return { ok: false, error: "Thiếu khóa phiên — tạo mã mới" };
+
+  s.lastActivity = Date.now();
+  try {
+    const encrypted = await exchangeTicketForToken(s.pendingTicket, captchaToken, s.captcha);
+    const token = decryptWithPrivateKey(s.privateKey, encrypted).toString("utf8");
+    s.token = token;
+    s.state = "success";
+    s.captcha = null;
+    s.pendingTicket = null;
+    pushLog(s, "success", `Captcha OK — token decrypted (${token.length} chars)`);
+    setTimeout(() => cleanupSession(sessionId, "success"), 5_000);
+    return { ok: true, token };
+  } catch (err: any) {
+    if (err instanceof CaptchaRequiredError) {
+      s.captcha = err.captcha;
+      s.state = "captcha_required";
+      pushLog(s, "warn", "Captcha bị Discord từ chối — hiện lại thử thách");
+      return { ok: false, captcha: err.captcha, error: "captcha-required" };
+    }
+    pushLog(s, "error", `Captcha retry failed: ${err.message}`);
+    s.state = "error";
+    s.errorMessage = `Token exchange: ${err.message}`;
+    setTimeout(() => cleanupSession(sessionId, "token-exchange-failed"), 5_000);
+    return { ok: false, error: err.message };
+  }
 }
 
 export function cancelQRSession(sessionId: string): void {

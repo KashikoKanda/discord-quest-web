@@ -65,6 +65,8 @@ export async function GET(request: NextRequest) {
     state: s.state,
     qrImage: s.qrImage,
     errorMessage: s.errorMessage,
+    // Present when Discord asked for hCaptcha on the ticket exchange.
+    captcha: s.captcha,
     logs: s.logs,
   });
 }

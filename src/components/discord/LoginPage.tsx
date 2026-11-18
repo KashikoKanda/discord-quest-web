@@ -786,7 +786,91 @@ function EmailLogin({ onLoginSuccess, parentLoading }: {
  * QR Code login
  * ────────────────────────────────────────────────────────────── */
 
-type QRStatus = "idle" | "loading_session" | "pending_scan" | "pending_confirm" | "success" | "expired" | "error";
+type QRStatus = "idle" | "loading_session" | "pending_scan" | "pending_confirm" | "captcha_required" | "success" | "expired" | "error";
+
+type QRCaptchaChallenge = { sitekey: string; rqdata?: string; rqtoken?: string };
+
+/**
+ * hCaptcha widget for the captcha Discord asks for on the QR ticket exchange.
+ * The challenge's rqdata is passed into the widget so the solved token is bound
+ * to the same captcha request Discord issued.
+ */
+function QRCaptchaWidget({ challenge, onSolved, busy }: {
+  challenge: QRCaptchaChallenge;
+  onSolved: (token: string) => void;
+  busy: boolean;
+}) {
+  const holderRef = useRef<HTMLDivElement | null>(null);
+  const solvedRef = useRef(onSolved);
+  solvedRef.current = onSolved;
+
+  useEffect(() => {
+    let cancelled = false;
+    const w = window as unknown as {
+      hcaptcha?: { render: (el: HTMLElement, opts: Record<string, unknown>) => unknown; reset?: (id?: unknown) => void };
+      __dqaHcaptchaOnload?: () => void;
+    };
+
+    const renderWidget = () => {
+      if (cancelled || !holderRef.current) return;
+      if (!w.hcaptcha || typeof w.hcaptcha.render !== "function") return;
+      holderRef.current.innerHTML = "";
+      try {
+        w.hcaptcha.render(holderRef.current, {
+          sitekey: challenge.sitekey,
+          theme: "dark",
+          rqdata: challenge.rqdata || undefined,
+          callback: (token: string) => solvedRef.current(token),
+        });
+      } catch {
+        /* widget already rendered for this container */
+      }
+    };
+
+    w.__dqaHcaptchaOnload = renderWidget;
+
+    if (w.hcaptcha && typeof w.hcaptcha.render === "function") {
+      renderWidget();
+      return () => { cancelled = true; };
+    }
+
+    let script = document.getElementById("dqa-hcaptcha-api") as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = "dqa-hcaptcha-api";
+      script.src = "https://js.hcaptcha.com/1/api.js?render=explicit&onload=__dqaHcaptchaOnload";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    // Safety net: if the onload callback already fired, poll for the API.
+    const poll = setInterval(() => {
+      if (w.hcaptcha && typeof w.hcaptcha.render === "function") {
+        clearInterval(poll);
+        renderWidget();
+      }
+    }, 400);
+    const stop = setTimeout(() => clearInterval(poll), 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      clearTimeout(stop);
+    };
+  }, [challenge.sitekey, challenge.rqdata]);
+
+  return (
+    <div className="mt-1">
+      <div ref={holderRef} className="flex justify-center min-h-[78px]" />
+      {busy && (
+        <p className="mt-1 text-center text-[10px] text-white/50 flex items-center justify-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin" /> Đang xác minh captcha...
+        </p>
+      )}
+    </div>
+  );
+}
 
 function QRLogin({ onLoginSuccess, parentLoading }: {
   onLoginSuccess: (token: string, profile: DiscordProfileFromApi) => void;
@@ -798,6 +882,8 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
   const [error, setError] = useState<string>("");
   const [logs, setLogs] = useState<Array<{ ts: number; level: string; message: string }>>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [captcha, setCaptcha] = useState<QRCaptchaChallenge | null>(null);
+  const [captchaBusy, setCaptchaBusy] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);  // Đếm ngược tới khi QR hết hạn
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
@@ -837,6 +923,8 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
     setError("");
     setQrImage(null);
     setSessionId(null);
+    setCaptcha(null);
+    setCaptchaBusy(false);
     setSecondsLeft(0);
     try {
       const res = await fetch("/api/auth/qr/start", { method: "POST" });
@@ -907,6 +995,10 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
         case "pending_confirm":
           setStatus("pending_confirm");
           break;
+        case "captcha_required":
+          setStatus("captcha_required");
+          setCaptcha(data.captcha || null);
+          break;
         case "success":
           setStatus("success");
           cleanup();
@@ -929,6 +1021,41 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
       /* ignore transient network errors — keep polling */
     }
   }, [cleanup, onLoginSuccess, qrImage]);
+
+  /** Send the solved hCaptcha token back so the server can retry the exchange. */
+  const solveCaptcha = useCallback(async (captchaToken: string) => {
+    if (!sessionId || captchaBusy) return;
+    setCaptchaBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/qr/captcha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, captchaToken }),
+      });
+      const data = await res.json();
+      if (data.success && data.state === "success") {
+        setStatus("success");
+        cleanup();
+        if (data.token && data.profile) onLoginSuccess(data.token, data.profile);
+        return;
+      }
+      if (data.captcha) {
+        // Discord issued a new challenge — render it again.
+        setCaptcha(data.captcha);
+        setError(data.error || "Captcha chưa được chấp nhận, giải lại giúp mình");
+        setStatus("captcha_required");
+        return;
+      }
+      setStatus("error");
+      setError(data.error || "Captcha thất bại");
+      cleanup();
+    } catch (err: any) {
+      setError(err.message || "Không gửi được captcha");
+    } finally {
+      setCaptchaBusy(false);
+    }
+  }, [sessionId, captchaBusy, cleanup, onLoginSuccess]);
 
   // Start session on mount
   useEffect(() => {
@@ -955,7 +1082,7 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
   }, [sessionId, cleanup, pollSession]);
 
   const isLoading = parentLoading || status === "success";
-  const showRefresh = status === "expired" || status === "error";
+  const showRefresh = status === "expired" || status === "error" || status === "captcha_required";
 
   // Helper to render QR image
   const renderQr = () => {
@@ -1043,6 +1170,20 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
             <div>
               <p className="text-[12px] text-[#3DD68C] font-medium">Đang chờ xác nhận trên điện thoại</p>
               <p className="text-[10px] text-white/40 mt-0.5">Vui lòng bấm "Yes, log me in" trên Discord mobile</p>
+            </div>
+          )}
+          {status === "captcha_required" && (
+            <div className="w-full">
+              <p className="text-[12px] text-[#F5B544] font-medium">Discord yêu cầu captcha</p>
+              <p className="text-[10px] text-white/40 mt-0.5">Giải captcha bên dưới để lấy token đăng nhập</p>
+              {captcha ? (
+                <QRCaptchaWidget challenge={captcha} onSolved={solveCaptcha} busy={captchaBusy} />
+              ) : (
+                <p className="mt-2 text-[10px] text-white/50 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Đang lấy thử thách captcha...
+                </p>
+              )}
+              {error && <p className="mt-1 text-[10px] text-[#F6606F]">{error}</p>}
             </div>
           )}
           {status === "success" && (
