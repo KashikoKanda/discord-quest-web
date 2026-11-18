@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { discordFetch, isTokenExpiredResponse } from "@/lib/discord";
 import { releaseAllForToken } from "@/lib/proxyPool";
 import { QuestWorker } from "@/lib/questWorker";
+import { checkDiscordToken } from "@/lib/tokenCheck";
+import { rotateStickyProxy } from "@/lib/proxyHelper";
 
 /**
  * POST /api/auth/cleanup
@@ -59,6 +61,15 @@ export async function POST(request: NextRequest) {
         );
 
         if (isTokenExpiredResponse(res)) {
+          // Xác nhận trực tiếp trước khi xoá: 401 qua proxy có thể do IP proxy,
+          // không phải token chết.
+          const verdict = await checkDiscordToken(row.token);
+          if (verdict.kind === "user") {
+            await rotateStickyProxy(`t_${String(row.token).slice(0, 16)}`);
+            alive++;
+            console.warn(`[Cleanup] Token ${row.id} vẫn sống, chỉ đổi proxy`);
+            continue;
+          }
           await db.discordToken.delete({ where: { id: row.id } });
           deleted++;
           console.log(`[Cleanup] Deleted expired token: ${row.username || row.userId || row.id}`);
