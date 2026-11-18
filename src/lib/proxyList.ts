@@ -142,12 +142,16 @@ export function parseProxyLine(line: string): ProxyEntry | null {
   const rawCC = zoneMatch?.[1] || sessionMatch?.[1] || null;
   const countryCode = rawCC ? rawCC.toUpperCase() : null;
 
+  // Gate owlproxy (gate-xx.owlproxy.com:1000) chỉ nhận HTTP thường, TLS trên
+  // port đó không tồn tại → list có ghi https:// thì vẫn hạ về http://.
+  const effectiveProtocol = /owlproxy\.com$/i.test(host) && protocol === "https" ? "http" : protocol;
+
   // Build standard proxy URL: protocol://user:pass@host:port
-  const proxyUrl = `${protocol}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`;
+  const proxyUrl = `${effectiveProtocol}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`;
 
   return {
     raw: trimmed,
-    protocol,
+    protocol: effectiveProtocol,
     host,
     port,
     user,

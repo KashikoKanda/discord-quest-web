@@ -39,7 +39,6 @@ interface DiscordProfileFromApi {
 function TabBar({ tab, setTab, disabled }: { tab: LoginTab; setTab: (t: LoginTab) => void; disabled: boolean }) {
   const tabs: { key: LoginTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { key: "token", label: "Token", icon: KeyRound },
-    { key: "email", label: "Email", icon: Mail },
     { key: "qr", label: "QR Code", icon: QrCode },
   ];
   return (
@@ -1323,8 +1322,13 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Token login only — bỏ Email + QR + OAuth tabs */}
-            <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+            {/* Đăng nhập: Token hoặc QR */}
+            <TabBar tab={tab} setTab={setTab} disabled={loginSuccess} />
+            {tab === "qr" ? (
+              <QRLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} />
+            ) : (
+              <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+            )}
 
             {/* Proxy Selector */}
             <div className="mt-4">
