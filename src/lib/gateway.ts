@@ -43,11 +43,21 @@ interface GatewayState {
 const gatewayStates = new Map<string, GatewayState>();
 
 // Updated to match aiko-chan-ai latest constants
-function createFingerprint(): GatewayState["fingerprint"] {
+type StoredFingerprint = {
+  userAgent: string;
+  locale: string;
+  timezone: string;
+  osVersion: string;
+};
+
+function createFingerprint(stored?: StoredFingerprint): GatewayState["fingerprint"] {
   const clientVersion = "1.0.9236";
   const buildNumber = 539951;
-  const browserVersion = "37.6.0"; // Electron version (aiko uses this)
-  const osVersion = "10.0.19045";
+  const osVersion = stored?.osVersion || "10.0.19045";
+  const chromeVersion = stored?.userAgent?.match(/Chrome\/([\d.]+)/)?.[1] || "138.0.7204.251";
+  const electronVersion = stored?.userAgent?.match(/Electron\/([\d.]+)/)?.[1] || "37.6.0";
+  const userAgent = stored?.userAgent ||
+    `Mozilla/5.0 (Windows NT ${osVersion.split(".").slice(0, 2).join(".")}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/${clientVersion} Chrome/${chromeVersion} Electron/${electronVersion} Safari/537.36`;
 
   return {
     client_launch_id: randomUUID(),
@@ -55,11 +65,11 @@ function createFingerprint(): GatewayState["fingerprint"] {
     client_heartbeat_session_id: randomUUID(),
     client_build_number: buildNumber,
     client_version: clientVersion,
-    browser_version: browserVersion,
+    browser_version: electronVersion,
     os_version: osVersion,
-    system_locale: "en-US",
-    timezone: "Asia/Saigon",
-    user_agent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/${clientVersion} Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36`,
+    system_locale: stored?.locale || "en-US",
+    timezone: stored?.timezone || "Asia/Saigon",
+    user_agent: userAgent,
   };
 }
 
@@ -137,6 +147,24 @@ export async function connectGateway(
   token: string
 ): Promise<boolean> {
   const state = getOrCreateState(tokenId);
+
+  // Identify phải mang ĐÚNG fingerprint mà REST dùng (UA, locale, timezone,
+  // os_version). Trước đây gateway tự bịa một fingerprint cố định cho mọi
+  // token → Identify và REST nói hai câu chuyện khác nhau về cùng 1 token.
+  if (!state.ready) {
+    try {
+      const { getOrCreateFingerprint } = await import("./discord");
+      const stored = await getOrCreateFingerprint(tokenId);
+      state.fingerprint = createFingerprint({
+        userAgent: stored.userAgent,
+        locale: stored.locale,
+        timezone: stored.timezone,
+        osVersion: stored.osVersion,
+      });
+    } catch {
+      // DB không đọc được → giữ fingerprint mặc định
+    }
+  }
 
   // If already connected and ready, return
   if (state.ready && state.ws?.readyState === WebSocket.OPEN) {

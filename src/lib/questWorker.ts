@@ -213,7 +213,8 @@ async function processTokenQueue(tokenId: string): Promise<void> {
     // Tăng delay để tránh Discord flag spam → revoke token
     // Trước: 500-800ms → quá nhanh → 50 API calls trong 30s = bot pattern
     // Sau: 1500-3000ms → giống người thật
-    await sleep(rnd(1500, 3000));
+    // 18/11: Discord siết detection → giãn thêm, tránh pattern "máy chạy"
+    await sleep(rnd(2500, 5500));
   }
 
   state.queueProcessing = false;
@@ -1015,9 +1016,10 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
         const questName = (quest as Record<string, unknown>)?.name as string || `quest ${i + 1}`;
         addLog(tokenId, "info", `[${i + 1}/${doableQuests.length}] Đang làm quest: ${questName}`);
         await processQuest(tokenId, quest);
-        // Random delay 8-15s giữa mỗi quest (trừ quest cuối)
+        // Nghỉ dài giữa các quest (trừ quest cuối): người thật không bao giờ
+        // hoàn thành 10 quest trong 2 phút. 60-180s/quest là mức an toàn.
         if (i < doableQuests.length - 1) {
-          const delay = Math.floor(Math.random() * 7000) + 8000; // 8000-15000ms
+          const delay = Math.floor(Math.random() * 120000) + 60000; // 60000-180000ms
           addLog(tokenId, "info", `Nghỉ ${(delay / 1000).toFixed(1)}s trước khi làm quest tiếp theo...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }

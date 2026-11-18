@@ -153,6 +153,13 @@ interface TokenFingerprint {
   osVersion: string;
 }
 
+/** Real Discord desktop clients report the bundled Electron version in
+ *  `browser_version`, NOT the Chromium version. Reporting Chrome 138.x there
+ *  while the UA says Electron/37.6.0 is a contradiction no real client has. */
+function electronVersionFromUA(ua: string): string {
+  return ua.match(/Electron\/([\d.]+)/)?.[1] || "37.6.0";
+}
+
 function buildUserAgent(chromeVersion: string, osVersion: string, electronVersion: string): string {
   // Discord Client UA - REQUIRED for heartbeat/video-progress API
   // Regular Chrome UA gets 401 Unauthorized from Discord
@@ -183,7 +190,7 @@ function generateFingerprintData(): Omit<TokenFingerprint, "userAgent"> & { user
  * If fingerprint exists in DB → load it (persists across restarts)
  * If not → create new one with random UA, locale, timezone
  */
-async function getOrCreateFingerprint(tokenId: string): Promise<TokenFingerprint> {
+export async function getOrCreateFingerprint(tokenId: string): Promise<TokenFingerprint> {
   // Try loading from DB
   const existing = await db.tokenFingerprint.findUnique({ where: { tokenId } });
   if (existing) {
@@ -257,7 +264,7 @@ export async function buildSuperProperties(tokenId: string): Promise<{ superProp
     has_client_mods: false,
     client_launch_id: fp.launchId,
     browser_user_agent: fp.userAgent,
-    browser_version: fp.chromeVersion,
+    browser_version: electronVersionFromUA(fp.userAgent),
     os_sdk_version: fp.osVersion.split(".").pop() || "19045",
     client_build_number: BUILD_NUMBER,
     native_build_number: NATIVE_BUILD_NUMBER,
@@ -323,7 +330,7 @@ export async function discordFetch(
       has_client_mods: false,
       client_launch_id: randomUUID(),
       browser_user_agent: oneTimeUA,
-      browser_version: oneTimeChrome,
+      browser_version: electronVersionFromUA(oneTimeUA),
       os_sdk_version: oneTimeOs.split(".").pop() || "19045",
       client_build_number: BUILD_NUMBER,
       native_build_number: NATIVE_BUILD_NUMBER,
