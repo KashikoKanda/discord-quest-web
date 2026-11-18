@@ -262,19 +262,32 @@ export async function getStickyProxy(tokenId?: string): Promise<StickyProxy | nu
   return bindStickyProxy(tokenId, proxy);
 }
 
-/** Proxy của token chết → đổi sang proxy khác và ghim lại. */
+/** Proxy của token chết → đổi sang proxy KHÁC và ghim lại. */
 export async function rotateStickyProxy(tokenId: string): Promise<StickyProxy | null> {
   const old = stickyMap().get(tokenId);
+  let previousUrl: string | null = null;
   if (old) {
+    previousUrl = old.proxyUrl;
     try { old.agent.close(); } catch { /* ignore */ }
     stickyMap().delete(tokenId);
     console.warn(
       `[ProxySticky] ${tokenId.slice(0, 12)} đổi proxy (${old.proxy.host}:${old.proxy.port} lỗi)`,
     );
   }
-  const proxy = await getRandomPreferredProxy();
-  if (!proxy) return null;
-  return bindStickyProxy(tokenId, proxy);
+
+  // Đổi sang proxy KHÁC proxy vừa lỗi, nếu pool còn lựa chọn. Bốc lại đúng proxy
+  // vừa chết thì coi như không đổi gì.
+  const all = await getAllProxies();
+  const candidates = all.filter((p) => buildProxyUrl(p) !== previousUrl);
+  const pool = candidates.length > 0 ? candidates : all;
+  const preferred = pool.filter(
+    (p) => p.countryCode && PREFERRED_COUNTRIES.includes(p.countryCode.toUpperCase()),
+  );
+  const pick = (preferred.length > 0 ? preferred : pool)[
+    Math.floor(Math.random() * (preferred.length > 0 ? preferred.length : pool.length))
+  ];
+  if (!pick) return null;
+  return bindStickyProxy(tokenId, pick);
 }
 
 /** Agent WebSocket (https-proxy-agent) đã ghim cho token — gateway dùng chung IP với REST. */

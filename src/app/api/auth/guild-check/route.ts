@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanToken = token.trim();
+    // Cùng một IP với phiên quest: kiểm tra guild gọi trực tiếp từ IP Render
+    // trong khi REST/gateway đang chạy qua proxy sẽ bị Discord coi là lạc phiên.
+    const tokenId = `t_${cleanToken.slice(0, 16)}`;
 
     let isMember = false;
     let guildName: string | null = null;
@@ -56,7 +59,7 @@ export async function POST(request: NextRequest) {
     // GET /guilds/{guild_id} → 200 nếu member, 403 nếu không
     // Ưu điểm: chính xác 100%, chỉ 1 API call, không bị giới hạn 200 guild
     try {
-      const directRes = await discordFetch(cleanToken, `/guilds/${requiredGuildId}`);
+      const directRes = await discordFetch(cleanToken, `/guilds/${requiredGuildId}`, {}, tokenId);
 
       if (directRes.ok) {
         // User LÀ member — response chứa guild info
@@ -116,7 +119,7 @@ export async function POST(request: NextRequest) {
             ? `/users/@me/guilds?limit=200&after=${afterId}`
             : `/users/@me/guilds?limit=200`;
 
-          const res = await discordFetch(cleanToken, path);
+          const res = await discordFetch(cleanToken, path, {}, tokenId);
 
           if (!res.ok) {
             if (res.status === 401) {
@@ -216,7 +219,12 @@ export async function POST(request: NextRequest) {
       // 3. Thử guild preview với user token (cho guild discoverable)
       if (!guildIcon) {
         try {
-          const previewRes = await discordFetch(cleanToken, `/guilds/${requiredGuildId}/preview`);
+          const previewRes = await discordFetch(
+        cleanToken,
+        `/guilds/${requiredGuildId}/preview`,
+        {},
+        tokenId,
+      );
           if (previewRes.ok) {
             const preview = await previewRes.json() as {
               name?: string;
