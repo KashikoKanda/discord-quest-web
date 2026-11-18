@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
         proxyError: reason,
         error: reason === "no_proxy"
           ? `Không thể tìm thấy proxy cho ${countryCode}`
-          : `Quá nhiều người dùng ${countryCode}, quay lại sau`,
+          : `Hết slot proxy ${countryCode} (tối đa 2 tài khoản/proxy), quay lại sau ít phút`,
       }, { status: 502 });
     }
 

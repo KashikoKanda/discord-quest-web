@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initBuildVersion } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
-import { assignProxy, releaseProxy } from "@/lib/proxyPool";
+import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
@@ -41,6 +41,15 @@ export async function POST(request: NextRequest) {
 
     initBuildVersion().catch(() => {});
 
+    // Một bộ UA duy nhất cho cả phiên login: UA, sec-ch-ua, super-properties và
+    // locale/timezone đều lấy từ cùng một bundle nên không mâu thuẫn nhau.
+    const uaSession = pickSessionUA();
+    const loginHeaders: Record<string, string> = {
+      ...buildDiscordHeaders(uaSession.ua, uaSession.superProps),
+      Authorization: cleanToken,
+    };
+    const sessionUserAgent = uaSession.ua.userAgent;
+
     // Danh sách country để thử
     let countriesToTry: string[];
     if (proxyCountry && proxyCountry !== "auto") {
@@ -62,18 +71,13 @@ export async function POST(request: NextRequest) {
       // Pick next country
       const cc = countriesToTry[attempt % countriesToTry.length];
 
-      // Assign proxy
+      // Login lấy proxy NGẪU NHIÊN trong pool — trùng proxy với người khác là
+      // bình thường và không chiếm slot của quest ẩn.
       let proxy: any = null;
       try {
-        const result = await assignProxy(tokenId, cc);
-        if (result.ok) {
-          proxy = result.assignment.proxy;
-        } else {
-          // No proxy for this country → try next
-          continue;
-        }
+        proxy = await pickLoginProxy(cc);
       } catch {
-        continue;
+        proxy = null;
       }
 
       if (!proxy) continue;
@@ -87,11 +91,7 @@ export async function POST(request: NextRequest) {
         const agent = new ProxyAgent(proxyUrl);
 
         const res = await undiciFetch("https://discord.com/api/v10/users/@me", {
-          headers: {
-            "Authorization": cleanToken,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/158.0.8127.18 Safari/537.36",
-            "Content-Type": "application/json",
-          },
+          headers: loginHeaders,
           dispatcher: agent,
           headersTimeout: 10_000,
           bodyTimeout: 10_000,
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
 
           if (profile && profile.id) {
             const sid = clientSessionId || generateSessionId();
-            registerSession(tokenId, sid, userAgent);
+            registerSession(tokenId, sid, sessionUserAgent);
 
             return NextResponse.json({
               success: true,
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
           const profile: any = verdict.profile;
           if (profile && profile.id) {
             const sid = clientSessionId || generateSessionId();
-            registerSession(tokenId, sid, userAgent);
+            registerSession(tokenId, sid, sessionUA.ua.userAgent);
             return NextResponse.json({
               success: true,
               profile: {

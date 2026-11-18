@@ -43,6 +43,13 @@ export type ProxyAvailability =
 /** Idle timeout: 5 minutes (ms) */
 const IDLE_TIMEOUT = 5 * 60 * 1000;
 
+/**
+ * Một proxy phục vụ tối đa 2 token (2 uid) cho quest ẩn.
+ * UID thứ 3 xin cùng proxy đó sẽ bị báo "hết slot".
+ * Login KHÔNG đi qua slot này — login random proxy, trùng nhau thoải mái.
+ */
+export const MAX_TOKENS_PER_PROXY = 2;
+
 // ──────────────────────────────────────────────────
 // Global State (persists across hot reloads)
 // ──────────────────────────────────────────────────
@@ -160,25 +167,33 @@ export async function checkAvailability(countryCode: string, tokenId?: string): 
 
   const assignments = getAssignmentsMap();
 
-  // Count how many proxies for this country are in use (by OTHER tokens)
-  const usedProxyKeys = new Set<string>();
+  // proxyKey → set tokenId đang giữ
+  const holders = new Map<string, Set<string>>();
   for (const [, a] of assignments) {
-    if (a.countryCode === cc) {
-      usedProxyKeys.add(`${a.proxy.host}:${a.proxy.port}`);
-    }
+    if (a.countryCode !== cc) continue;
+    const proxyKey = `${a.proxy.host}:${a.proxy.port}`;
+    if (!holders.has(proxyKey)) holders.set(proxyKey, new Set());
+    holders.get(proxyKey)!.add(a.tokenId);
   }
 
-  // If this token already has an assignment for this country, it counts as 1 free slot
-  const hasExisting = tokenId && assignments.has(`${tokenId}::${cc}`);
-  const usedCount = usedProxyKeys.size;
-  const totalSlots = matchingProxies.length;
-  const freeSlots = hasExisting ? (totalSlots - usedCount + 1) : (totalSlots - usedCount);
+  // Mỗi proxy 2 slot; token đã giữ proxy nào thì slot đó coi như của nó
+  let freeSlots = 0;
+  for (const proxy of matchingProxies) {
+    const key = `${proxy.host}:${proxy.port}`;
+    const held = holders.get(key);
+    const used = held ? held.size : 0;
+    const alreadyMine = !!(tokenId && held?.has(tokenId));
+    if (alreadyMine) continue; // token này đã có chỗ, không tính thêm slot
+    freeSlots += Math.max(MAX_TOKENS_PER_PROXY - used, 0);
+  }
 
-  if (freeSlots <= 0 && !hasExisting) {
+  const totalSlots = matchingProxies.length * MAX_TOKENS_PER_PROXY;
+
+  if (freeSlots <= 0) {
     return { status: "full", freeSlots: 0, totalSlots };
   }
 
-  return { status: "available", freeSlots: Math.max(freeSlots, 0), totalSlots };
+  return { status: "available", freeSlots, totalSlots };
 }
 
 /**
@@ -331,24 +346,44 @@ async function findFreeProxy(_tokenId: string, countryCode: string): Promise<Pro
 
   const assignments = getAssignmentsMap();
 
-  // Build set of currently used proxy keys for this country
-  const usedProxyKeys = new Set<string>();
+  // proxyKey → set tokenId đang giữ proxy đó
+  const holders = new Map<string, Set<string>>();
   for (const [, a] of assignments) {
-    if (a.countryCode === countryCode) {
-      usedProxyKeys.add(`${a.proxy.host}:${a.proxy.port}`);
-    }
+    if (a.countryCode !== countryCode) continue;
+    const proxyKey = `${a.proxy.host}:${a.proxy.port}`;
+    if (!holders.has(proxyKey)) holders.set(proxyKey, new Set());
+    holders.get(proxyKey)!.add(a.tokenId);
   }
 
-  // Find first proxy that is NOT in use
+  // Chọn proxy còn slot (đã có token này hoặc chưa đủ MAX_TOKENS_PER_PROXY uid)
   for (const proxy of matchingProxies) {
     const proxyKey = `${proxy.host}:${proxy.port}`;
-    if (!usedProxyKeys.has(proxyKey)) {
+    const current = holders.get(proxyKey);
+    if (!current || current.size < MAX_TOKENS_PER_PROXY) {
       return proxy;
     }
   }
 
-  // All proxies are taken
+  // Tất cả proxy của country này đã đủ 2 uid
   return null;
+}
+
+/**
+ * Chọn proxy NGẪU NHIÊN cho việc login.
+ *
+ * Login không quan tâm slot: nhiều lần login hoàn toàn có thể rơi vào cùng
+ * một proxy (IP trùng nhau là chuyện bình thường, giống nhiều người dùng
+ * chung một mạng). Chỉ quest ẩn mới bị giới hạn 2 uid/proxy.
+ */
+export async function pickLoginProxy(countryCode?: string): Promise<ProxyEntry | null> {
+  const cc = countryCode && countryCode !== "auto" ? countryCode.toUpperCase() : undefined;
+  let list = cc ? await findProxies(cc) : [];
+  if (list.length === 0) {
+    const all = await fetchProxyList();
+    list = cc ? all.filter((p) => p.countryCode.toUpperCase() === cc) : all;
+  }
+  if (list.length === 0) return null;
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 /**
