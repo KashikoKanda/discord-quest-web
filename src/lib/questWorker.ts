@@ -667,10 +667,14 @@ async function fetchActivityWithRetry(
   url: string,
   init: RequestInit,
   label: string,
+  tokenId?: string,
 ): Promise<Response> {
   let last: Response | null = null;
+  const { fetchWithTokenProxy } = await import("./proxyHelper");
   for (let attempt = 1; attempt <= 2; attempt++) {
-    last = await fetch(url, init);
+    // discordsays cũng phải đi qua đúng IP của token: gọi trực tiếp từ IP server
+    // trong khi REST quest đang ở IP proxy là "cùng token, hai IP".
+    last = await fetchWithTokenProxy(tokenId, url, init);
     if (last.ok) return last;
     if (attempt === 1) {
       await sleep(1500);
@@ -858,6 +862,7 @@ async function doAchievementInActivityQuest(
         body: JSON.stringify({ code: authCode }),
       },
       "authorize",
+      tokenId,
     );
 
     if (!dsTokenRes.ok) {

@@ -14,7 +14,7 @@
 
 import WebSocket from "ws";
 import { randomUUID } from "crypto";
-import { getBuildVersion } from "./discord";
+import { getBuildVersion, getElectronPairs } from "./discord";
 
 const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 
@@ -135,12 +135,27 @@ export function getSuperProperties(tokenId: string): string {
   return Buffer.from(JSON.stringify(props)).toString("base64");
 }
 
+/** Locale của fingerprint đang dùng cho token (header phải khớp super-properties). */
+export function getGatewayLocale(tokenId: string): string {
+  const state = gatewayStates.get(tokenId);
+  return state?.fingerprint.system_locale || "en-US";
+}
+
+/** Timezone của fingerprint đang dùng cho token. */
+export function getGatewayTimezone(tokenId: string): string {
+  const state = gatewayStates.get(tokenId);
+  return state?.fingerprint.timezone || "Asia/Saigon";
+}
+
 /**
  * Get the User-Agent for REST calls
  */
 export function getUserAgent(tokenId: string): string {
   const state = gatewayStates.get(tokenId);
-  return state?.fingerprint.user_agent || `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9236 Chrome/138.0.7204.251 Electron/37.6.0 Safari/537.36`;
+  if (state?.fingerprint.user_agent) return state.fingerprint.user_agent;
+  const { clientVersion } = getBuildVersion();
+  const pair = getElectronPairs()[0];
+  return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/${clientVersion} Chrome/${pair.chrome} Electron/${pair.electron} Safari/537.36`;
 }
 
 /**
@@ -418,6 +433,17 @@ export function disconnectGateway(tokenId: string) {
   state.ready = false;
   state.sessionId = null;
   gatewayStates.delete(tokenId);
+}
+
+/**
+ * Đóng TẤT CẢ phiên gateway (dùng khi nhận SIGTERM trước khi Render kill
+ * instance cũ). Nếu không đóng, trong lúc deploy instance cũ và mới cùng giữ
+ * một phiên cho cùng token → Discord thấy hai kết nối cùng lúc và đá phiên.
+ */
+export function disconnectAllGateways(): void {
+  for (const tokenId of Array.from(gatewayStates.keys())) {
+    try { disconnectGateway(tokenId); } catch { /* ignore */ }
+  }
 }
 
 /**

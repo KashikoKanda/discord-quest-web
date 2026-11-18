@@ -389,7 +389,7 @@ export async function buildSuperProperties(tokenId: string): Promise<{ superProp
 // When gateway is connected, uses gateway's super-properties (CRITICAL for heartbeat/video-progress)
 // When gateway is not connected, uses DB fingerprint or one-time fingerprint
 
-import { getSuperProperties, getUserAgent, isGatewayReady } from "./gateway";
+import { getSuperProperties, getUserAgent, isGatewayReady, getGatewayLocale, getGatewayTimezone } from "./gateway";
 
 export async function discordFetch(
   token: string,
@@ -405,11 +405,14 @@ export async function discordFetch(
   let timezone: string;
 
   if (tokenId && isGatewayReady(tokenId)) {
-    // Gateway is connected → use gateway's super-properties (MUST match Identify payload)
+    // Gateway is connected → use gateway's super-properties (MUST match Identify payload).
+    // Locale/timezone cũng phải lấy từ chính fingerprint đó: trước đây header
+    // x-discord-locale luôn là en-US/Asia-Saigon trong khi super-properties khai
+    // locale của token (vd es-ES) → một request tự mâu thuẫn.
     superProps = getSuperProperties(tokenId);
     userAgent = getUserAgent(tokenId);
-    locale = "en-US";
-    timezone = "Asia/Saigon";
+    locale = getGatewayLocale(tokenId);
+    timezone = getGatewayTimezone(tokenId);
   } else if (tokenId) {
     // No gateway → use DB fingerprint
     const built = await buildSuperProperties(tokenId);

@@ -315,8 +315,14 @@ export async function fetchWithTokenProxy(
 
   if (!tokenId) return direct();
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const binding = attempt === 0
+  // Token đã từng login qua proxy thì IP của nó là IP proxy. Gửi trực tiếp từ IP
+  // server trong trường hợp này chính là "cùng token, hai IP" → Discord vô hiệu
+  // hoá phiên. Thà báo lỗi để worker thử lại sau còn hơn đổi IP.
+  const hadBinding = !!(await getStickyProxy(tokenId).catch(() => null));
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // 2 lần đầu giữ nguyên proxy (lỗi mạng thường là tạm thời), lần 3 mới đổi IP.
+    const binding = attempt < 2
       ? await getStickyProxy(tokenId)
       : await rotateStickyProxy(tokenId);
     if (!binding) {
@@ -354,7 +360,9 @@ export async function fetchWithTokenProxy(
     }
   }
 
-  if (!allowDirect) throw new Error("Proxy đã ghim không dùng được — thử lại sau.");
-  console.warn(`[ProxySticky] ${tokenId.slice(0, 12)} hết proxy → gửi trực tiếp từ IP server`);
+  if (!allowDirect || hadBinding) {
+    throw new Error("Proxy của token tạm thời không dùng được — giữ nguyên IP, thử lại sau.");
+  }
+  console.warn(`[ProxySticky] ${tokenId.slice(0, 12)} chưa từng có proxy → gửi trực tiếp từ IP server`);
   return direct();
 }
