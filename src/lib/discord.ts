@@ -97,6 +97,7 @@ async function updateClientVersionFromManifest(): Promise<void> {
 async function updateLatestBuildVersion(): Promise<void> {
   try {
     await updateClientVersionFromManifest();
+    await refreshStoredFingerprintVersions();
     console.log("[Discord] Fetching latest build number...");
     const response = await fetch("https://discord.com/app", {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
@@ -157,6 +158,28 @@ async function updateLatestBuildVersion(): Promise<void> {
 /**
  * Initialize build version on startup + schedule refresh every 6 hours
  */
+/**
+ * Token đã lưu vẫn mang UA với version desktop cũ (discord/1.0.9236) trong khi
+ * build number đã lên 675174 — lệch ngay trong cùng một header. Thay đoạn
+ * discord/<version> trong UA đã lưu bằng version thật hiện tại.
+ */
+async function refreshStoredFingerprintVersions(): Promise<void> {
+  try {
+    const rows = await db.tokenFingerprint.findMany({ select: { tokenId: true, userAgent: true } });
+    let updated = 0;
+    for (const row of rows) {
+      if (!row.userAgent || !row.userAgent.includes("discord/")) continue;
+      const next = row.userAgent.replace(/discord\/[\d.]+/, `discord/${CLIENT_VERSION}`);
+      if (next === row.userAgent) continue;
+      await db.tokenFingerprint.update({ where: { tokenId: row.tokenId }, data: { userAgent: next } });
+      updated++;
+    }
+    if (updated > 0) console.log(`[Discord] Refreshed client version in ${updated} stored fingerprint(s) → ${CLIENT_VERSION}`);
+  } catch (err) {
+    console.warn("[Discord] Fingerprint version refresh skipped:", err instanceof Error ? err.message : String(err));
+  }
+}
+
 export async function initBuildVersion(): Promise<void> {
   if (buildVersionLoaded) return;
   buildVersionLoaded = true;
