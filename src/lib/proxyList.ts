@@ -45,6 +45,18 @@ export function getProxySource(): ProxySource | null {
   const inline = process.env.PROXY_LIST?.trim();
   if (inline) return { kind: "inline", value: inline };
 
+  // Một số nền tảng (Render) làm hỏng giá trị env nhiều dòng, nên nhận thêm
+  // bản base64 một dòng: PROXY_LIST_B64 = base64(danh sách, mỗi dòng 1 proxy).
+  const inlineB64 = process.env.PROXY_LIST_B64?.trim();
+  if (inlineB64) {
+    try {
+      const decoded = Buffer.from(inlineB64, "base64").toString("utf8").trim();
+      if (decoded) return { kind: "inline", value: decoded };
+    } catch {
+      // base64 hỏng → bỏ qua
+    }
+  }
+
   const file = process.env.PROXY_LIST_FILE?.trim() || DEFAULT_PROXY_FILE;
   try {
     // Chỉ dùng file khi nó thực sự tồn tại
