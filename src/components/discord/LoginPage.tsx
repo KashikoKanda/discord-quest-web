@@ -872,9 +872,10 @@ function QRCaptchaWidget({ challenge, onSolved, busy }: {
   );
 }
 
-function QRLogin({ onLoginSuccess, parentLoading }: {
+function QRLogin({ onLoginSuccess, parentLoading, onSwitchToToken }: {
   onLoginSuccess: (token: string, profile: DiscordProfileFromApi) => void;
   parentLoading: boolean;
+  onSwitchToToken?: () => void;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<QRStatus>("idle");
@@ -1184,6 +1185,24 @@ function QRLogin({ onLoginSuccess, parentLoading }: {
                 </p>
               )}
               {error && <p className="mt-1 text-[10px] text-[#F6606F]">{error}</p>}
+              <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                Discord hay từ chối captcha giải ngoài discord.com. Nếu giải mãi vẫn lỗi,
+                {onSwitchToToken ? (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={onSwitchToToken}
+                      className="text-[#5865F2] hover:text-[#7C8FFF] underline transition-colors"
+                    >
+                      đăng nhập bằng token
+                    </button>{" "}
+                    sẽ chắc ăn hơn.
+                  </>
+                ) : (
+                  " hãy đăng nhập bằng token."
+                )}
+              </p>
             </div>
           )}
           {status === "success" && (
@@ -1456,7 +1475,11 @@ export default function LoginPage() {
             {/* Đăng nhập: Token hoặc QR */}
             <TabBar tab={tab} setTab={setTab} disabled={loginSuccess} />
             {tab === "qr" ? (
-              <QRLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} />
+              <QRLogin
+                onLoginSuccess={handleLoginSuccess}
+                parentLoading={loginSuccess}
+                onSwitchToToken={() => setTab("token")}
+              />
             ) : (
               <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
             )}

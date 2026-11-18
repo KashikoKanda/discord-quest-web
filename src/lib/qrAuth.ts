@@ -36,6 +36,7 @@ import QRCode from "qrcode";
 import { getBuildVersion } from "./discord";
 import { pickRandomUA, buildSuperProperties, buildDiscordHeaders, buildWsOptions, type UABundle } from "./uaPool";
 import { fetchWithProxy, getWsProxyAgent } from "./proxyHelper";
+import { solveDiscordCaptcha, capsolverEnabled } from "./captchaSolver";
 
 export type QRState =
   | "pending_scan"      // QR displayed, waiting for scan
@@ -224,6 +225,50 @@ async function exchangeTicketForToken(
     throw new Error("remote-auth/login: missing encrypted_token");
   }
   return data.encrypted_token;
+}
+
+/** Số lần thử đổi ticket qua proxy khác nhau trước khi chịu thua. */
+const EXCHANGE_ATTEMPTS = 4;
+
+/**
+ * Exchange the ticket for a token, working around Discord's captcha wall:
+ *   1. retry a few times through different proxies (a clean IP is often not
+ *      challenged at all),
+ *   2. if CAPSOLVER_API_KEY is set, let CapSolver solve Discord's hCaptcha,
+ *   3. otherwise rethrow so the browser can show the captcha widget.
+ */
+async function exchangeWithFallbacks(session: QRSession, ticket: string): Promise<string> {
+  let lastCaptcha: CaptchaRequiredError | null = null;
+
+  for (let attempt = 1; attempt <= EXCHANGE_ATTEMPTS; attempt++) {
+    try {
+      if (attempt > 1) {
+        pushLog(session, "info", `Thử đổi ticket qua proxy khác (lần ${attempt}/${EXCHANGE_ATTEMPTS})...`);
+      }
+      return await exchangeTicketForToken(ticket);
+    } catch (err) {
+      if (!(err instanceof CaptchaRequiredError)) throw err;
+      lastCaptcha = err;
+      pushLog(session, "warn", `Proxy này bị Discord đòi captcha (${attempt}/${EXCHANGE_ATTEMPTS})`);
+    }
+  }
+
+  if (capsolverEnabled()) {
+    pushLog(session, "info", "Đang nhờ CapSolver giải hCaptcha (rqdata/rqtoken của Discord)...");
+    try {
+      const solved = await solveDiscordCaptcha(lastCaptcha!.captcha);
+      if (solved) {
+        pushLog(session, "success", "CapSolver đã trả token captcha — đổi ticket lại");
+        return await exchangeTicketForToken(ticket, solved, lastCaptcha!.captcha);
+      }
+    } catch (err: any) {
+      pushLog(session, "warn", `CapSolver lỗi: ${err.message} — chuyển sang giải tay`);
+    }
+  } else {
+    pushLog(session, "warn", "Chưa có CAPSOLVER_API_KEY — cần người dùng giải captcha trên web");
+  }
+
+  throw lastCaptcha ?? new Error("captcha-required");
 }
 
 function cleanupSession(sessionId: string, reason: string) {
@@ -565,7 +610,7 @@ export async function startQRSession(): Promise<{
               }
               pushLog(session, "info", `Mobile confirmed — got ticket (${ticket.length} chars), exchanging for token...`);
               session.pendingTicket = ticket;
-              const encryptedToken = await exchangeTicketForToken(ticket);
+              const encryptedToken = await exchangeWithFallbacks(session, ticket);
               const token = decryptWithPrivateKey(privateKey, encryptedToken).toString("utf8");
               session.token = token;
               session.state = "success";
