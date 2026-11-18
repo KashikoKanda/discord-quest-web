@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     // Use tokenId from client (isolated per token) or generate from token hash
     const tokenId = clientTokenId || `t_${token.slice(0, 16)}`;
-    QuestWorker.registerToken(tokenId, token, true, autoClaim ?? true);
+    QuestWorker.registerToken(tokenId, token, true, autoClaim ?? true, multiQuest !== false);
 
     // Truyền multiQuest vào QuestWorker để quyết định chế độ
     // - multiQuest = true → parallel (tất cả cùng lúc)

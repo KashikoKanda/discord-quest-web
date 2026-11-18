@@ -71,10 +71,42 @@ interface TokenState {
   autoQuestEnabled: boolean;
   autoQuestLoopTimer?: NodeJS.Timeout;
   autoQuestLoopRunning?: boolean; // guards against overlapping loop ticks
+  // User preference: run every pending quest at once (parallel pool) instead of
+  // one at a time. The auto-quest loop honours this too — it used to always run
+  // sequentially, which made "Multi" look broken.
+  multiQuest: boolean;
 }
 
 // How often the auto-quest loop re-checks for unfinished quests
 const AUTO_LOOP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes (was 1 minute) — tránh API spam
+
+/**
+ * How many quests one account may run at the same time in multi mode.
+ * Mỗi quest chỉ đẩy vài request mỗi 2-5s nên 8 là mức an toàn cho tài khoản
+ * có hàng chục quest mà không dồn dập API.
+ */
+const QUEST_CONCURRENCY = Math.max(1, Number(process.env.QUEST_CONCURRENCY || 8));
+
+/** Chạy `worker` trên từng item với tối đa `limit` việc song song. */
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      try {
+        await worker(items[index], index);
+      } catch {
+        /* mỗi quest tự log lỗi của nó */
+      }
+    }
+  });
+  await Promise.all(runners);
+}
 
 // ──────────────────────────────────────────────────
 // Global State (persists across hot reloads)
@@ -280,13 +312,13 @@ async function doWatchVideoQuest(
     ? new Date(userStatus.enrolled_at as string).getTime()
     : Date.now();
 
-  // aiko: REAL-TIME MODE — gửi timestamp theo thời gian thực để tránh revoke
-  // Trước: speed=6, interval=6 → timestamp đi nhanh hơn real time → Discord detect bot
-  // Sau: speed=5, interval=5 → 1:1 với real time (5s progress / 5s real)
-  // KHÔNG tăng maxFuture quá cao — Discord check timestamp hợp lệ
-  const maxFuture = 3; // giảm buffer để timestamp không đi quá xa
-  const speed = 5;
-  const interval = 5;
+  // Timestamp gửi lên luôn bị Discord chặn ở mốc "thời gian đã trôi kể từ lúc
+  // enroll" (+ buffer nhỏ). Vì vậy mỗi nhịp ta đẩy THẲNG tới mốc tối đa được
+  // phép thay vì nhích 5s mỗi 5s: quest vừa enroll thì vẫn đúng real-time, còn
+  // quest enroll từ lâu (hoặc bị bỏ dở) xong gần như ngay lập tức — trước đây
+  // nó cứ bò 5s/nhịp nên tiến độ video rất chậm.
+  const maxFuture = 3; // buffer nhỏ để timestamp không vượt thời gian thật
+  const interval = 2; // nhịp gửi (giây)
   let secondsDone: number = userStatus?.progress
     ? ((userStatus.progress as Record<string, unknown>)[questType] as { value?: number } | undefined)?.value ?? 0
     : 0;
@@ -315,11 +347,12 @@ async function doWatchVideoQuest(
 
     const maxAllowed = Math.floor((Date.now() - enrolledAt) / 1000) + maxFuture;
     const diff = maxAllowed - secondsDone;
-    const timestamp = secondsDone + speed;
+    // Đẩy tới mốc xa nhất Discord cho phép ở nhịp này.
+    const timestamp = Math.min(secondsNeeded, Math.max(secondsDone, maxAllowed));
 
-    if (diff >= speed) {
+    if (diff > 0 && secondsDone < secondsNeeded) {
       try {
-        // aiko: timestamp + Math.random() for natural variation
+        // timestamp + Math.random() for natural variation
         const sendTimestamp = Math.min(secondsNeeded, timestamp + Math.random());
         const result = await enqueueApiCall(
           tokenId,
@@ -353,7 +386,7 @@ async function doWatchVideoQuest(
     }
 
     // Check if done
-    if (timestamp >= secondsNeeded) {
+    if (secondsDone >= secondsNeeded) {
       break;
     }
 
@@ -625,6 +658,27 @@ async function getProxyTicket(tokenId: string, applicationId: string): Promise<s
  * Build the activity referrer URL — aiko-style:
  *   https://{appId}.discordsays.com/?instance_id=example-cl-instance&platform=desktop&discord_proxy_ticket={ticket}
  */
+/**
+ * Gọi Discord Says (discordsays.com) với 1 lần thử lại: endpoint này hay trả
+ * 500 "Env data not found" ở lần đầu khi proxy ticket vừa được cấp.
+ */
+async function fetchActivityWithRetry(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<Response> {
+  let last: Response | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    last = await fetch(url, init);
+    if (last.ok) return last;
+    if (attempt === 1) {
+      await sleep(1500);
+      continue;
+    }
+  }
+  return last as Response;
+}
+
 async function buildActivityReferrer(tokenId: string, applicationId: string): Promise<string | null> {
   const ticket = await getProxyTicket(tokenId, applicationId);
   if (!ticket) return null;
@@ -743,7 +797,14 @@ async function doAchievementInActivityQuest(
     );
 
     if (!authRes.ok) {
-      addLog(tokenId, "error", `Xác thực OAuth2 thất bại cho ${applicationName}: ${authRes.status}`);
+      const authBody = typeof authRes.data === "object" && authRes.data
+        ? JSON.stringify(authRes.data).slice(0, 160)
+        : "";
+      addLog(
+        tokenId,
+        "error",
+        `Xác thực OAuth2 thất bại cho ${applicationName}: ${authRes.status}${authBody ? ` ${authBody}` : ""}`,
+      );
       updateQuestProgress(tokenId, questId, 0, "failed");
       return;
     }
@@ -773,7 +834,11 @@ async function doAchievementInActivityQuest(
     addLog(tokenId, "info", `Đang lấy proxy ticket...`);
     const activityReferrer = await buildActivityReferrer(tokenId, applicationId);
     if (!activityReferrer) {
-      addLog(tokenId, "error", `Không lấy được proxy ticket cho ${applicationName}`);
+      addLog(
+        tokenId,
+        "error",
+        `Không lấy được proxy ticket cho ${applicationName} — achievement quest cần Gateway đang kết nối, thử lại sau.`,
+      );
       updateQuestProgress(tokenId, questId, 0, "failed");
       return;
     }
@@ -784,13 +849,14 @@ async function doAchievementInActivityQuest(
     addLog(tokenId, "info", `Đang lấy token Discord Says...`);
 
     const authorizeHeaders = await buildActivityHeaders(tokenId, questId, "", activityReferrer);
-    const dsTokenRes = await fetch(
+    const dsTokenRes = await fetchActivityWithRetry(
       `https://${applicationId}.discordsays.com/.proxy/acf/authorize`,
       {
         method: "POST",
         headers: authorizeHeaders,
         body: JSON.stringify({ code: authCode }),
-      }
+      },
+      "authorize",
     );
 
     if (!dsTokenRes.ok) {
@@ -818,7 +884,7 @@ async function doAchievementInActivityQuest(
     addLog(tokenId, "info", `Đang hoàn thành achievement (target: ${questTarget})...`);
 
     const progressHeaders = await buildActivityHeaders(tokenId, questId, dsToken, activityReferrer);
-    const progressRes = await fetch(
+    const progressRes = await fetchActivityWithRetry(
       `https://${applicationId}.discordsays.com/.proxy/acf/quest/progress`,
       {
         method: "POST",
@@ -827,7 +893,8 @@ async function doAchievementInActivityQuest(
           quest_id: questId,
           progress: questTarget,
         }),
-      }
+      },
+      "quest/progress",
     );
 
     if (!progressRes.ok) {
@@ -1003,9 +1070,15 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
     if (multiQuest) {
       // ─── MULTI MODE: Parallel (như ban đầu) ───
       // Tất cả quest chạy song song cùng lúc
-      addLog(tokenId, "info", `Đang làm ${doableQuests.length} quest (song song - multi mode)...`);
-      await Promise.allSettled(
-        doableQuests.map((quest: Record<string, unknown>) => processQuest(tokenId, quest))
+      addLog(
+        tokenId,
+        "info",
+        `Đang làm ${doableQuests.length} quest song song (tối đa ${QUEST_CONCURRENCY} quest cùng lúc)...`,
+      );
+      await runWithConcurrency(
+        doableQuests as Record<string, unknown>[],
+        QUEST_CONCURRENCY,
+        (quest) => processQuest(tokenId, quest),
       );
     } else {
       // ─── SINGLE MODE: Sequential (an toàn hơn) ───
@@ -1119,7 +1192,7 @@ async function runAutoQuestLoopTick(tokenId: string): Promise<void> {
       } else {
         addLog(tokenId, "info", `[Auto-Quest] Phát hiện ${doableQuests.length} quest chưa làm, đang xử lý...`);
         // processAllQuests(tokenId, true) → skipAutoClaim=true: only completes quests.
-        await processAllQuests(tokenId, true).catch((err: unknown) => {
+        await processAllQuests(tokenId, true, state.multiQuest).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
           addLog(tokenId, "error", `[Auto-Quest] Lỗi xử lý: ${msg}`);
         });
@@ -1159,12 +1232,13 @@ function startAutoQuestLoop(tokenId: string): void {
 // ──────────────────────────────────────────────────
 
 export const QuestWorker = {
-  registerToken(tokenId: string, token: string, isVerified: boolean = false, _autoClaim: boolean = true): void {
+  registerToken(tokenId: string, token: string, isVerified: boolean = false, _autoClaim: boolean = true, multiQuest: boolean = true): void {
     const state = getGlobalState();
     if (state.has(tokenId)) {
       const existing = state.get(tokenId)!;
       existing.token = token;
       existing.isVerified = isVerified;
+      existing.multiQuest = multiQuest;
       return;
     }
     state.set(tokenId, {
@@ -1178,6 +1252,7 @@ export const QuestWorker = {
       apiQueue: [],
       queueProcessing: false,
       autoQuestEnabled: false,
+      multiQuest,
     });
   },
 
@@ -1189,11 +1264,18 @@ export const QuestWorker = {
     getGlobalState().delete(tokenId);
   },
 
-  startQuests(tokenId: string, questId?: string, multiQuest: boolean = false): { started: boolean; message: string } {
+  /** Lưu lựa chọn Multi/Single để auto-loop dùng lại ở các vòng sau. */
+  setMultiQuest(tokenId: string, multiQuest: boolean): void {
+    const state = getGlobalState().get(tokenId);
+    if (state) state.multiQuest = multiQuest;
+  },
+
+  startQuests(tokenId: string, questId?: string, multiQuest: boolean = true): { started: boolean; message: string } {
     const state = getGlobalState().get(tokenId);
     if (!state) {
       return { started: false, message: "Token chưa đăng ký" };
     }
+    state.multiQuest = multiQuest;
     if (state.status === "running") {
       return { started: false, message: "Quest đang chạy" };
     }

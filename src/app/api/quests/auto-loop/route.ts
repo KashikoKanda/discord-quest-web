@@ -15,13 +15,18 @@ import { QuestWorker } from "@/lib/questWorker";
  */
 export async function POST(request: NextRequest) {
   try {
-    const { tokenId, token, enabled, isVerified } = await request.json();
+    const { tokenId, token, enabled, isVerified, multiQuest } = await request.json();
 
     if (!tokenId || !token) {
       return NextResponse.json({ error: "tokenId và token là bắt buộc" }, { status: 400 });
     }
     if (typeof enabled !== "boolean") {
       return NextResponse.json({ error: "enabled phải là boolean" }, { status: 400 });
+    }
+
+    if (typeof multiQuest === "boolean") {
+      QuestWorker.registerToken(tokenId, token, !!isVerified, true, multiQuest);
+      QuestWorker.setMultiQuest(tokenId, multiQuest);
     }
 
     const result = QuestWorker.setAutoQuest(tokenId, token, enabled, !!isVerified);

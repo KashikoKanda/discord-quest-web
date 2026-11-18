@@ -199,13 +199,13 @@ export default function Settings() {
       const res = await fetch("/api/quests/auto-loop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenId, token, enabled, isVerified }),
+        body: JSON.stringify({ tokenId, token, enabled, isVerified, multiQuest: multiQuestEnabled }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) return false;
       return true;
     } catch { return false; }
-  }, [token, tokenId, isVerified]);
+  }, [token, tokenId, isVerified, multiQuestEnabled]);
 
   const handleToggleAutoQuest = useCallback(async () => {
     if (!token || autoQuestToggling) return;
