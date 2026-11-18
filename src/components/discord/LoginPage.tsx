@@ -168,10 +168,13 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     try {
       // Step 1: Gửi login + proxyCountry → server assign proxy + verify token
       // Server sẽ đợi proxy kết nối thành công trước khi verify token
+      // Timeout phía client: server có thể thử 3 proxy × verify token, nếu treo
+      // quá lâu thì báo rõ thay vì quay vòng "Đang xử lý..." mãi.
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: tokenInput.trim(), proxyCountry }),
+        signal: AbortSignal.timeout(120000),
       });
       let data: any;
       try {
@@ -192,7 +195,12 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       setStatus("connected");
       onLoginSuccess(tokenInput.trim(), data.profile);
     } catch (err: any) {
-      setError("Lỗi kết nối: " + err.message);
+      const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
+      setError(
+        timedOut
+          ? "Máy chủ phản hồi quá lâu (quá 2 phút). Thử lại, nếu vẫn vậy thì đổi proxy khác."
+          : "Lỗi kết nối: " + err.message,
+      );
       setStatus("");
       setLoading(false);
     }
@@ -243,7 +251,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         {isLoading ? (
           <span className="flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
-            {status === "connecting" ? "Đang kết nối proxy..." : "Đang đăng nhập..."}
+            {status === "connecting" ? "Đang xử lý..." : "Đang đăng nhập..."}
           </span>
         ) : (
           <span className="flex items-center gap-2">
