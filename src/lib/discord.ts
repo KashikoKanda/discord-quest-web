@@ -25,7 +25,7 @@ let NATIVE_BUILD_NUMBER = 81687;
 let buildVersionLoaded = false;
 
 // Allow other modules to read the current build constants (kept in sync by
-// initBuildVersion()). Used by authPassword.ts and qrAuth.ts.
+// initBuildVersion()). Used by authPassword.ts.
 export function getBuildVersion(): { clientVersion: string; buildNumber: number; nativeBuildNumber: number } {
   return { clientVersion: CLIENT_VERSION, buildNumber: BUILD_NUMBER, nativeBuildNumber: NATIVE_BUILD_NUMBER };
 }
