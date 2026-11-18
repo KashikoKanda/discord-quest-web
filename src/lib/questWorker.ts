@@ -1135,9 +1135,10 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
       addLog(tokenId, "info", "Đã xử lý xong quest.");
     }
 
-    // Disconnect gateway after all quests done
-    disconnectGateway(tokenId);
-
+    // KHÔNG ngắt gateway sau mỗi batch. Client thật giữ một phiên gateway suốt
+    // ngày; connect → burst request → offline ngay là mẫu bot rõ ràng và làm
+    // fingerprint (launch_id, session) đổi liên tục. Gateway tự heartbeat và
+    // tự reconnect, chỉ ngắt khi stop/logout.
     if (state.status === "running") {
       state.status = "idle";
       addLog(tokenId, "success", "Đã xử lý xong tất cả quest!");
@@ -1259,6 +1260,7 @@ export const QuestWorker = {
 
   async removeToken(tokenId: string): Promise<void> {
     stopAutoQuestLoop(tokenId);
+    disconnectGateway(tokenId);
     clearAllIntervals(tokenId);
     releaseAllForToken(tokenId);
     await clearFingerprint(tokenId);
@@ -1321,7 +1323,7 @@ export const QuestWorker = {
             }
           }
 
-          disconnectGateway(tokenId);
+          // giữ gateway sống (xem chú thích ở processAllQuests)
           if (state.status === "running") state.status = "idle";
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -1358,6 +1360,8 @@ export const QuestWorker = {
     for (const [, progress] of state.questProgress) {
       if (progress.status === "running") progress.status = "paused";
     }
+    // Dừng hẳn thì mới rời gateway (giống user tắt app), còn giữa các batch thì giữ online
+    disconnectGateway(tokenId);
     addLog(tokenId, "info", "Đã dừng tất cả quest");
     return { stopped: true, message: "Đã dừng tất cả quest" };
   },

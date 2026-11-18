@@ -14,6 +14,7 @@
 
 import WebSocket from "ws";
 import { randomUUID } from "crypto";
+import { getBuildVersion } from "./discord";
 
 const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 
@@ -30,6 +31,7 @@ interface GatewayState {
     launch_signature: string;
     client_heartbeat_session_id: string;
     client_build_number: number;
+    native_build_number: number;
     client_version: string;
     browser_version: string;
     os_version: string;
@@ -51,8 +53,11 @@ type StoredFingerprint = {
 };
 
 function createFingerprint(stored?: StoredFingerprint): GatewayState["fingerprint"] {
-  const clientVersion = "1.0.9236";
-  const buildNumber = 539951;
+  // PHẢI là version thật đang cập nhật từ Discord. Trước đây chỗ này hardcode
+  // 1.0.9236 / 539951 trong khi REST gửi 1.0.9269 / 675174 → cùng một token mà
+  // Identify và x-super-properties nói hai version khác nhau, đúng kiểu client
+  // lạ bị Discord soi rồi thu hồi token.
+  const { clientVersion, buildNumber, nativeBuildNumber } = getBuildVersion();
   const osVersion = stored?.osVersion || "10.0.19045";
   const chromeVersion = stored?.userAgent?.match(/Chrome\/([\d.]+)/)?.[1] || "138.0.7204.251";
   const electronVersion = stored?.userAgent?.match(/Electron\/([\d.]+)/)?.[1] || "37.6.0";
@@ -64,8 +69,10 @@ function createFingerprint(stored?: StoredFingerprint): GatewayState["fingerprin
     launch_signature: randomUUID(),
     client_heartbeat_session_id: randomUUID(),
     client_build_number: buildNumber,
+    native_build_number: nativeBuildNumber,
     client_version: clientVersion,
-    browser_version: electronVersion,
+    // browser_version của Discord desktop là phiên bản Chromium, không phải Electron
+    browser_version: chromeVersion,
     os_version: osVersion,
     system_locale: stored?.locale || "en-US",
     timezone: stored?.timezone || "Asia/Saigon",
@@ -116,7 +123,7 @@ export function getSuperProperties(tokenId: string): string {
     browser_version: fp.browser_version,
     os_sdk_version: fp.os_version.split(".").pop() || "19045",
     client_build_number: fp.client_build_number,
-    native_build_number: 81687, // Updated to match aiko latest
+    native_build_number: fp.native_build_number,
     client_event_source: null,
     launch_signature: fp.launch_signature,
     client_heartbeat_session_id: fp.client_heartbeat_session_id,
@@ -161,6 +168,12 @@ export async function connectGateway(
         timezone: stored.timezone,
         osVersion: stored.osVersion,
       });
+      // Dùng luôn launch/heartbeat id đã lưu trong DB. Trước đây gateway tự sinh
+      // id mới mỗi lần reconnect trong khi REST lại lấy id khác từ DB → cùng một
+      // token gửi hai bộ "client_launch_id" khác nhau, rất dễ bị coi là client lạ.
+      if (stored.launchId) state.fingerprint.client_launch_id = stored.launchId;
+      if (stored.launchSignature) state.fingerprint.launch_signature = stored.launchSignature;
+      if (stored.heartbeatSessionId) state.fingerprint.client_heartbeat_session_id = stored.heartbeatSessionId;
     } catch {
       // DB không đọc được → giữ fingerprint mặc định
     }
@@ -344,7 +357,7 @@ function sendIdentify(tokenId: string, token: string, state: GatewayState) {
         browser_version: fp.browser_version,
         os_sdk_version: fp.os_version.split(".").pop() || "19045",
         client_build_number: fp.client_build_number,
-        native_build_number: 81687, // Updated to match aiko latest
+        native_build_number: fp.native_build_number,
         client_event_source: null,
         launch_signature: fp.launch_signature,
         client_heartbeat_session_id: fp.client_heartbeat_session_id,
@@ -353,7 +366,7 @@ function sendIdentify(tokenId: string, token: string, state: GatewayState) {
         gateway_connect_reasons: "AppSkeleton",
       },
       capabilities: 0,
-      presence: { status: "online", since: 0, activities: [], afk: false },
+      presence: { status: "online", since: null, activities: [], afk: false },
       compress: false,
       client_state: { guild_versions: {} },
     },
