@@ -25,6 +25,8 @@ interface GatewayState {
   sessionId: string | null;
   ready: boolean;
   resumeUrl: string | null;
+  /** Đang trong quá trình connect — chống mở 2 socket cho cùng token. */
+  connectPromise?: Promise<boolean>;
   // Fingerprint data - must match x-super-properties in REST calls
   fingerprint: {
     client_launch_id: string;
@@ -184,13 +186,23 @@ export async function connectGateway(
     return true;
   }
 
+  // ĐANG connect thì trả về đúng promise đó, KHÔNG mở socket thứ hai.
+  // Log cũ cho thấy 2 "Connected"/"Sending Identify" trong cùng một giây cho cùng
+  // token (startQuests gọi connectGateway rồi processAllQuests gọi lại). Hai phiên
+  // cùng fingerprint = Discord coi như token bị chia sẻ → close 4004 và có thể
+  // thu hồi token.
+  if (state.connectPromise) {
+    console.log(`[Gateway:${tokenId.slice(0, 12)}] Đang kết nối, dùng lại phiên hiện tại`);
+    return state.connectPromise;
+  }
+
   // Gateway phải đi CÙNG IP với REST của token này. Trước đây gateway nối trực
   // tiếp từ IP Render còn REST qua proxy → Identify và REST lệch IP, Discord
   // đóng phiên (4004) và token bị coi như thu hồi.
   const { getStickyWsAgent } = await import("./proxyHelper");
   const wsAgent = await getStickyWsAgent(tokenId).catch(() => null);
 
-  return new Promise((resolve) => {
+  state.connectPromise = new Promise((resolve) => {
     try {
       const url = state.resumeUrl || GATEWAY_URL;
       const ws = new WebSocket(url, {
@@ -224,7 +236,13 @@ export async function connectGateway(
       });
 
       ws.on("close", (code, reason) => {
-        console.log(`[Gateway:${tokenId.slice(0, 12)}] Closed: ${code} ${reason}`);
+        const reasonText = reason?.toString?.() || "";
+        console.log(`[Gateway:${tokenId.slice(0, 12)}] Closed: ${code} ${reasonText}`);
+        if (code === 4004) {
+          console.warn(
+            `[Gateway:${tokenId.slice(0, 12)}] 4004 = Discord từ chối token ngay ở Identify (token đã chết/bị thu hồi)`,
+          );
+        }
         state.ready = false;
         if (state.heartbeatInterval) {
           clearInterval(state.heartbeatInterval);
@@ -254,7 +272,11 @@ export async function connectGateway(
       console.error(`[Gateway:${tokenId.slice(0, 12)}] Connect error:`, err);
       resolve(false);
     }
+  }).finally(() => {
+    state.connectPromise = undefined;
   });
+
+  return state.connectPromise;
 }
 
 /**

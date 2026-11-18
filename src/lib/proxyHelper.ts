@@ -329,13 +329,22 @@ export async function fetchWithTokenProxy(
       fetchOptions.headersTimeout = 15_000;
       fetchOptions.bodyTimeout = 15_000;
       const res = (await undiciFetch(url, fetchOptions)) as unknown as Response;
-      // 401 ở lần đầu: có thể IP proxy này đang bị Discord gắn cờ, không chắc
-      // token đã chết → đổi proxy rồi thử lại một lần trước khi kết luận.
-      if (res.status === 401 && attempt === 0) {
+      // 401 có thể do IP proxy hoặc do token. Phân biệt bằng body: Discord luôn
+      // trả JSON có "message"/"code"; proxy trả text/HTML (401 auth, hết hạn mức).
+      if (res.status === 401) {
+        const raw = await res.clone().text().catch(() => "");
+        let fromDiscord = false;
+        try {
+          const parsed = JSON.parse(raw);
+          fromDiscord = typeof parsed?.message === "string" || typeof parsed?.code === "number";
+        } catch {
+          fromDiscord = false;
+        }
         console.warn(
-          `[ProxySticky] ${tokenId.slice(0, 12)} 401 qua ${binding.proxy.host}:${binding.proxy.port} → thử IP khác`,
+          `[ProxySticky] ${tokenId.slice(0, 12)} 401 qua ${binding.proxy.host}:${binding.proxy.port} ` +
+            `(${fromDiscord ? "Discord từ chối token" : "lỗi proxy"}) ${raw.slice(0, 120)}`,
         );
-        continue;
+        if (attempt === 0) continue; // đổi IP rồi thử lại trước khi kết luận
       }
       return res;
     } catch (err: any) {
