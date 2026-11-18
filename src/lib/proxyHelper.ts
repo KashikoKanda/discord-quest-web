@@ -279,7 +279,18 @@ export async function rotateStickyProxy(tokenId: string): Promise<StickyProxy | 
   // vừa chết thì coi như không đổi gì.
   const all = await getAllProxies();
   const candidates = all.filter((p) => buildProxyUrl(p) !== previousUrl);
-  const pool = candidates.length > 0 ? candidates : all;
+
+  // Ưu tiên proxy CÙNG NƯỚC với proxy vừa lỗi: token đang ở VN mà bị đẩy sang TH
+  // cũng là "đổi nước giữa phiên", đúng thứ Discord coi là phiên bị đánh cắp.
+  const prevCountry = (old?.proxy.countryCode || "").toUpperCase();
+  const sameCountry = prevCountry
+    ? candidates.filter((p) => (p.countryCode || "").toUpperCase() === prevCountry)
+    : [];
+  const pool = sameCountry.length > 0
+    ? sameCountry
+    : candidates.length > 0
+      ? candidates
+      : all;
   const preferred = pool.filter(
     (p) => p.countryCode && PREFERRED_COUNTRIES.includes(p.countryCode.toUpperCase()),
   );
