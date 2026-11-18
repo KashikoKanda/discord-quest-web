@@ -77,6 +77,12 @@ interface TokenState {
   multiQuest: boolean;
   /** Lúc token được nạp vào worker (dùng cho chế độ warm-up token mới). */
   registeredAt?: number;
+  /**
+   * Người dùng bấm dừng cả lượt. Tách khỏi `status` vì `status` còn bị một quest
+   * lỗi ghi đè thành "error" — chuyện đó trước đây làm MỌI quest đang chạy song
+   * song tự thoát, nên multi nhìn như "không xử lý hết".
+   */
+  runStopped?: boolean;
 }
 
 // How often the auto-quest loop re-checks for unfinished quests
@@ -108,6 +114,50 @@ async function runWithConcurrency<T>(
     }
   });
   await Promise.all(runners);
+}
+
+/**
+ * Thứ tự ưu tiên khi xử lý quest.
+ *
+ * Video và achievement là hai loại hay bị bỏ lại cuối: video chạy lâu nên nếu
+ * vào hàng muộn sẽ bị tick sau cắt ngang, achievement cần gateway + proxy ticket
+ * nên cần thời gian ổn định. Quest play-on-desktop thì giữ slot rất lâu (15 phút
+ * trở lên) nên phải xếp sau cùng để không chặn các quest ngắn.
+ */
+const QUEST_PRIORITY: Record<string, number> = {
+  WATCH_VIDEO: 0,
+  WATCH_VIDEO_ON_MOBILE: 0,
+  ACHIEVEMENT_IN_ACTIVITY: 1,
+  PLAY_ACTIVITY: 2,
+  PLAY_ON_DESKTOP: 3,
+  PLAY_ON_XBOX: 3,
+  PLAY_ON_PLAYSTATION: 3,
+  STREAM_ON_DESKTOP: 4,
+  UNKNOWN: 5,
+};
+
+function questPriority(quest: Record<string, unknown>): number {
+  return QUEST_PRIORITY[getQuestType(quest)] ?? 5;
+}
+
+/** Sắp quest theo ưu tiên; sort của Node là stable nên cùng loại giữ nguyên thứ tự API. */
+function sortQuestsByPriority(quests: Record<string, unknown>[]): Record<string, unknown>[] {
+  return [...quests].sort((a, b) => questPriority(a) - questPriority(b));
+}
+
+/** Lấy lại danh sách quest còn phải làm; trả null nếu không fetch được (khác với "đã xong hết"). */
+async function fetchRemainingQuests(
+  tokenId: string,
+  token: string,
+): Promise<Record<string, unknown>[] | null> {
+  try {
+    const { quests } = await fetchDiscordQuests(token, tokenId);
+    return (quests as Record<string, unknown>[]).filter(
+      (q) => !isQuestCompleted(q) && !isQuestExpired(q),
+    );
+  } catch {
+    return null;
+  }
 }
 
 // ──────────────────────────────────────────────────
@@ -337,7 +387,7 @@ async function doWatchVideoQuest(
 
   while (true) {
     const state = getGlobalState().get(tokenId);
-    if (!state || state.status !== "running") {
+    if (!state || state.runStopped) {
       addLog(tokenId, "warn", `Quest ${questName} đã dừng`);
       return;
     }
@@ -366,7 +416,7 @@ async function doWatchVideoQuest(
 
         if (result.status === 401) {
           addLog(tokenId, "error", `Token hết hạn khi gửi video-progress cho quest ${questName}`);
-          state.status = "error";
+          updateQuestProgress(tokenId, questId, (secondsDone / secondsNeeded) * 100, "failed");
           return;
         }
 
@@ -449,7 +499,7 @@ async function doPlayOnDesktopQuest(
 
   while (!completed) {
     const state = getGlobalState().get(tokenId);
-    if (!state || state.status !== "running") {
+    if (!state || state.runStopped) {
       addLog(tokenId, "warn", `Quest ${questName} đã dừng`);
       return;
     }
@@ -476,7 +526,7 @@ async function doPlayOnDesktopQuest(
 
       if (result.status === 401) {
         addLog(tokenId, "error", `Token hết hạn khi gửi heartbeat cho quest ${questName}`);
-        state.status = "error";
+        updateQuestProgress(tokenId, questId, 0, "failed");
         return;
       }
 
@@ -560,7 +610,7 @@ async function doPlayActivityQuest(
 
   while (!completed) {
     const state = getGlobalState().get(tokenId);
-    if (!state || state.status !== "running") {
+    if (!state || state.runStopped) {
       addLog(tokenId, "warn", `Quest ${questName} đã dừng`);
       return;
     }
@@ -584,7 +634,7 @@ async function doPlayActivityQuest(
 
       if (result.status === 401) {
         addLog(tokenId, "error", `Token hết hạn khi gửi heartbeat cho quest ${questName}`);
-        state.status = "error";
+        updateQuestProgress(tokenId, questId, 0, "failed");
         return;
       }
 
@@ -1053,6 +1103,7 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
   if (!state) return;
 
   state.status = "running";
+  state.runStopped = false;
   addLog(tokenId, "info", "Bắt đầu xử lý tất cả quest...");
 
   try {
@@ -1090,23 +1141,56 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
         "info",
         `Đang làm ${doableQuests.length} quest song song (tối đa ${concurrency} quest cùng lúc${isWarmUp ? ", token mới nên chạy chậm" : ""})...`,
       );
-      await runWithConcurrency(
-        doableQuests as Record<string, unknown>[],
-        concurrency,
-        (quest) => processQuest(tokenId, quest),
+      // Video + achievement đi trước, play-on-desktop giữ slot lâu nên đi sau.
+      const ordered = sortQuestsByPriority(doableQuests as Record<string, unknown>[]);
+      const videoCount = ordered.filter((q) => questPriority(q) === 0).length;
+      const achievementCount = ordered.filter((q) => questPriority(q) === 1).length;
+      addLog(
+        tokenId,
+        "info",
+        `Ưu tiên: ${videoCount} video, ${achievementCount} achievement làm trước, còn lại theo sau.`,
       );
+
+      await runWithConcurrency(ordered, concurrency, (quest) => processQuest(tokenId, quest));
+
+      // ─── Lượt 2: vét những quest chưa xong ───
+      // Video dài có thể bị cắt khi hết lượt, achievement lỗi tạm thời vì gateway
+      // chưa READY. Trước đây mấy quest này phải chờ tick sau mới được thử lại,
+      // nên nhìn như "multi không xử lý hết".
+      let remaining = await fetchRemainingQuests(tokenId, state.token);
+      if (remaining && remaining.length > 0) {
+        addLog(tokenId, "warn", `Còn ${remaining.length} quest chưa xong, chạy lại lượt 2...`);
+        await runWithConcurrency(
+          sortQuestsByPriority(remaining),
+          concurrency,
+          (quest) => processQuest(tokenId, quest),
+        );
+        remaining = await fetchRemainingQuests(tokenId, state.token);
+      }
+      if (remaining) {
+        if (remaining.length === 0) {
+          addLog(tokenId, "success", "Đã hoàn thành toàn bộ quest khả dụng.");
+        } else {
+          addLog(
+            tokenId,
+            "warn",
+            `Còn ${remaining.length} quest chưa xong sau 2 lượt, sẽ thử lại ở tick sau.`,
+          );
+        }
+      }
     } else {
       // ─── SINGLE MODE: Sequential (an toàn hơn) ───
       // Làm từng quest cho đến khi hết, delay 8-15s giữa mỗi quest
       addLog(tokenId, "info", `Đang làm ${doableQuests.length} quest (lần lượt - single mode)...`);
-      for (let i = 0; i < doableQuests.length; i++) {
-        const quest = doableQuests[i];
+      const sequential = sortQuestsByPriority(doableQuests as Record<string, unknown>[]);
+      for (let i = 0; i < sequential.length; i++) {
+        const quest = sequential[i];
         const questName = (quest as Record<string, unknown>)?.name as string || `quest ${i + 1}`;
         addLog(tokenId, "info", `[${i + 1}/${doableQuests.length}] Đang làm quest: ${questName}`);
         await processQuest(tokenId, quest);
         // Nghỉ dài giữa các quest (trừ quest cuối): người thật không bao giờ
         // hoàn thành 10 quest trong 2 phút. 60-180s/quest là mức an toàn.
-        if (i < doableQuests.length - 1) {
+        if (i < sequential.length - 1) {
           const delay = Math.floor(Math.random() * 120000) + 60000; // 60000-180000ms
           addLog(tokenId, "info", `Nghỉ ${(delay / 1000).toFixed(1)}s trước khi làm quest tiếp theo...`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -1322,6 +1406,7 @@ export const QuestWorker = {
             return;
           }
           state.status = "running";
+          state.runStopped = false;
           await processQuest(tokenId, quest);
 
           // Auto-claim if verified and completed
@@ -1371,6 +1456,7 @@ export const QuestWorker = {
     }
 
     clearAllIntervals(tokenId);
+    state.runStopped = true;
     state.status = "idle";
     for (const [, progress] of state.questProgress) {
       if (progress.status === "running") progress.status = "paused";
