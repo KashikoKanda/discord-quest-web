@@ -230,6 +230,14 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* App shell tự quản chiều cao bằng 100dvh và mỗi page có vùng scroll riêng.
+       Khoá scroll của document để không còn dải trống dưới taskbar mobile khi
+       URL bar của browser ẩn/hiện (100vh cũ > 100dvh). */
+    height: 100%;
+    overscroll-behavior: none;
+  }
+  body {
+    overflow: hidden;
   }
   body {
     @apply bg-background text-foreground;

@@ -38,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="vi" suppressHydrationWarning className="dark">
       <body
-        className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased bg-[#0A0B0E] text-white min-h-screen`}
+        className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased bg-[#0A0B0E] text-white min-h-[100dvh]`}
         style={{
           fontFamily: "var(--font-sans), 'Inter', system-ui, sans-serif",
         }}

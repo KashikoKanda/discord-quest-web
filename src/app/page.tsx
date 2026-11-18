@@ -33,7 +33,7 @@ function LoadingSplash() {
   }, []);
 
   return (
-    <div className="h-screen bg-[#0A0B0E] flex flex-col items-center justify-center relative overflow-hidden">
+    <div className="h-[100dvh] bg-[#0A0B0E] flex flex-col items-center justify-center relative overflow-hidden">
       {/* Aurora mesh bg — transform-only CSS animations (no filter:blur) */}
       <div className="absolute inset-0 pointer-events-none">
         <div
@@ -299,7 +299,7 @@ export default function Home() {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="h-screen"
+          className="h-[100dvh]"
         >
           <LoginPage />
         </motion.div>

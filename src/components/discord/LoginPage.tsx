@@ -783,7 +783,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className="h-screen flex flex-col relative overflow-y-auto scrollbar-hide"
+      className="h-[100dvh] flex flex-col relative overflow-y-auto scrollbar-hide"
       style={loginSuccess ? { animation: "login-page-out 600ms cubic-bezier(0.4, 0, 0.2, 1) 400ms forwards" } : undefined}
     >
       {/* ─── Aurora mesh background (CSS-only — no framer-motion) ─── */}
