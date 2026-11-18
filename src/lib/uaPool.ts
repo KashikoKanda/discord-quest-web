@@ -18,7 +18,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { getBuildVersion } from "./discord";
+import { getBuildVersion, getElectronPairs, OS_VERSIONS as DESKTOP_OS_VERSIONS } from "./discord";
 
 // Chrome stable releases (Nov 2026) — keep updated from
 // https://chromereleases.googleblog.com
@@ -106,6 +106,10 @@ export interface UABundle {
   timezone: string;
   /** Windows build that matches sec-ch-ua-platform-version (used by x-super-properties). */
   superPropsOsVersion: string;
+  /** Electron version bundled in the Discord desktop build. */
+  electronVersion: string;
+  /** Discord desktop client version (discord/1.0.xxxx in the UA). */
+  clientVersion: string;
 }
 
 /**
@@ -114,40 +118,51 @@ export interface UABundle {
  * sec-ch-ua-full-version-list).
  */
 export function pickRandomUA(): UABundle {
-  const chrome = pick(CHROME_VERSIONS);
+  // Identity PHẢI là Discord desktop client, không phải Chrome trình duyệt:
+  // gateway Identify của token này gửi UA Electron (discord/1.0.x + Electron/x).
+  // Trước đây REST/login lại khai browser "Chrome" với UA Chrome thuần → cùng
+  // một token nói hai câu chuyện khác nhau, Discord gắn cờ và thu hồi phiên.
+  const pair = pick(getElectronPairs());
+  const chrome = pair.chrome;
+  const electron = pair.electron;
   const major = chrome.split(".")[0];
-  const os = pick(SEC_CH_UA_PLATFORM_VERSIONS);
-  const arch = pick(SEC_CH_UA_ARCH);
-  // arm64 machines never report 32-bit
-  const bitness = arch === '"arm"' ? '"64"' : pick(SEC_CH_UA_BITNESS);
+  const { clientVersion } = getBuildVersion();
+  const osVersion = pick(DESKTOP_OS_VERSIONS); // dạng 10.0.22631
   const profile = pick(LOCALE_PROFILES);
-  const acceptLanguage = profile.acceptLanguage;
 
-  // Real Chrome UA format: Windows NT 10.0 (always — even for Win 11)
-  const userAgent = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
+  const userAgent =
+    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ` +
+    `discord/${clientVersion} Chrome/${chrome} Electron/${electron} Safari/537.36`;
 
-  // sec-ch-ua header — real Chrome uses "Not?A;Brand" (note the ?)
-  const secChUa = `"Not?A;Brand";v="8", "Chromium";v="${major}", "Google Chrome";v="${major}"`;
+  // Electron không có brand "Google Chrome" — chỉ Chromium + Not?A;Brand.
+  const secChUa = `"Chromium";v="${major}", "Not?A;Brand";v="24"`;
+  const secChUaFullVersionList = `"Chromium";v="${chrome}", "Not?A;Brand";v="24.0.0.0"`;
 
-  // sec-ch-ua-full-version-list — Chrome 107+ sends full version strings
-  const secChUaFullVersionList = `"Not?A;Brand";v="8.0.0.0", "Chromium";v="${chrome}", "Google Chrome";v="${chrome}"`;
+  // sec-ch-ua-platform-version của Windows suy ra từ build thật đang khai.
+  const platformVersion = osVersion === "10.0.19045" ? "10.0.0"
+    : osVersion === "10.0.22000" ? "13.0.0"
+    : osVersion === "10.0.22621" ? "14.0.0"
+    : osVersion === "10.0.22631" ? "14.0.0"
+    : "15.0.0";
 
   return {
     userAgent,
     secChUa,
-    secChUaMobile: "?0",  // Desktop = ?0
+    secChUaMobile: "?0",
     secChUaPlatform: '"Windows"',
-    secChUaArch: arch,
-    secChUaBitness: bitness,
-    secChUaPlatformVersion: `"${os}"`,
+    secChUaArch: '"x86"', // Windows x64 luôn khai "x86" trong sec-ch-ua-arch
+    secChUaBitness: '"64"',
+    secChUaPlatformVersion: `"${platformVersion}"`,
     secChUaFullVersionList,
-    secChUaModel: '""',  // Desktop = empty string
+    secChUaModel: '""',
     chromeVersion: chrome,
-    osVersion: os,
-    acceptLanguage,
+    osVersion,
+    acceptLanguage: profile.acceptLanguage,
     locale: profile.locale,
     timezone: profile.timezone,
-    superPropsOsVersion: PLATFORM_VERSION_TO_OS[os] ?? "10.0.22631",
+    superPropsOsVersion: osVersion,
+    electronVersion: electron,
+    clientVersion,
   };
 }
 
@@ -162,12 +177,12 @@ export function buildSuperProperties(ua: UABundle): {
   const { clientVersion, buildNumber, nativeBuildNumber } = getBuildVersion();
   const sp = {
     os: "Windows",
-    browser: "Chrome",
+    browser: "Discord Client",
     release_channel: "stable",
     client_version: clientVersion,
     os_version: ua.superPropsOsVersion, // matches sec-ch-ua-platform-version
-    os_arch: ua.secChUaArch.replace(/"/g, ""),
-    app_arch: ua.secChUaArch.replace(/"/g, ""),
+    os_arch: "x64",
+    app_arch: "x64",
     system_locale: ua.locale, // matches Accept-Language / x-discord-locale
     has_client_mods: false,
     client_launch_id: randomUUID(),

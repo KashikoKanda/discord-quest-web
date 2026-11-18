@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initBuildVersion } from "@/lib/discord";
+import { initBuildVersion, adoptFingerprint } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
@@ -124,6 +124,13 @@ export async function POST(request: NextRequest) {
             // đúng IP này, không đổi IP giữa phiên nữa.
             bindStickyProxy(tokenId, proxy);
             registerSession(tokenId, sid, sessionUserAgent);
+            await adoptFingerprint(tokenId, {
+              userAgent: uaSession.ua.userAgent,
+              chromeVersion: uaSession.ua.chromeVersion,
+              osVersion: uaSession.ua.osVersion,
+              locale: uaSession.ua.locale,
+              timezone: uaSession.ua.timezone,
+            });
 
             return NextResponse.json({
               success: true,
@@ -220,6 +227,13 @@ export async function POST(request: NextRequest) {
           if (profile && profile.id) {
             const sid = clientSessionId || generateSessionId();
             registerSession(tokenId, sid, sessionUA.ua.userAgent);
+            await adoptFingerprint(tokenId, {
+              userAgent: sessionUA.ua.userAgent,
+              chromeVersion: sessionUA.ua.chromeVersion,
+              osVersion: sessionUA.ua.osVersion,
+              locale: sessionUA.ua.locale,
+              timezone: sessionUA.ua.timezone,
+            });
             return NextResponse.json({
               success: true,
               profile: {

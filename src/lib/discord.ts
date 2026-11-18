@@ -43,8 +43,13 @@ const ELECTRON_CHROMIUM_PAIRS: Array<{ electron: string; chrome: string }> = [
   { electron: "35.7.5", chrome: "134.0.6998.205" },
 ];
 
+/** Cặp Electron/Chromium thật — uaPool dùng lại để REST và gateway cùng identity. */
+export function getElectronPairs(): Array<{ electron: string; chrome: string }> {
+  return ELECTRON_CHROMIUM_PAIRS;
+}
+
 // OS version pool — mix of Windows 10/11 variants (most common in real traffic)
-const OS_VERSIONS = [
+export const OS_VERSIONS = [
   "10.0.19045", // Windows 10 22H2 (most common Win10)
   "10.0.22621", // Windows 11 22H2
   "10.0.22631", // Windows 11 23H2
@@ -60,8 +65,38 @@ const TIMEZONES = ["Asia/Saigon", "America/New_York", "America/Los_Angeles", "Eu
 // Fetches discord.com/app, parses JS assets for buildNumber
 // ──────────────────────────────────────────────────
 
+/**
+ * Lấy version desktop thật từ manifest cập nhật của Discord.
+ * Trước đây client_version bị hardcode (1.0.9236) trong khi bản thật đã lên
+ * 1.0.92xx — Discord đối chiếu version cũ với build number mới là thấy lệch.
+ */
+async function updateClientVersionFromManifest(): Promise<void> {
+  try {
+    const res = await fetch(
+      "https://discord.com/api/updates/distributions/app/manifests/latest?channel=stable&platform=win&arch=x64&no-limit=1",
+      { headers: { "User-Agent": `Discord/${CLIENT_VERSION}` } },
+    );
+    if (!res.ok) return;
+    const data = await res.json() as { modules?: Record<string, { full?: { host_version?: number[] } }> };
+    for (const mod of Object.values(data.modules || {})) {
+      const hv = mod?.full?.host_version;
+      if (Array.isArray(hv) && hv.length === 3) {
+        const version = hv.join(".");
+        if (version !== CLIENT_VERSION) {
+          console.log(`[Discord] Client version updated: ${CLIENT_VERSION} → ${version}`);
+          CLIENT_VERSION = version;
+        }
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("[Discord] Manifest version fetch failed:", err instanceof Error ? err.message : String(err));
+  }
+}
+
 async function updateLatestBuildVersion(): Promise<void> {
   try {
+    await updateClientVersionFromManifest();
     console.log("[Discord] Fetching latest build number...");
     const response = await fetch("https://discord.com/app", {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
@@ -183,6 +218,53 @@ function generateFingerprintData(): Omit<TokenFingerprint, "userAgent"> & { user
     userAgent,
     osVersion,
   };
+}
+
+/**
+ * Ghi đè fingerprint của token bằng ĐÚNG identity vừa login.
+ *
+ * Trước đây login dùng một UA ngẫu nhiên, xong worker lại tạo fingerprint khác
+ * trong DB → REST/gateway nói bằng UA thứ hai ngay sau khi login. Giờ identity
+ * của phiên login trở thành identity của token.
+ */
+export async function adoptFingerprint(
+  tokenId: string,
+  fp: { userAgent: string; chromeVersion: string; osVersion: string; locale: string; timezone: string },
+): Promise<void> {
+  try {
+    const existing = await db.tokenFingerprint.findUnique({ where: { tokenId } });
+    if (existing) {
+      if (existing.userAgent === fp.userAgent) return;
+      await db.tokenFingerprint.update({
+        where: { tokenId },
+        data: {
+          userAgent: fp.userAgent,
+          chromeVersion: fp.chromeVersion,
+          osVersion: fp.osVersion,
+          locale: fp.locale,
+          timezone: fp.timezone,
+        },
+      });
+    } else {
+      await db.tokenFingerprint.create({
+        data: {
+          tokenId,
+          launchId: randomUUID(),
+          launchSignature: randomUUID(),
+          heartbeatSessionId: randomUUID(),
+          sessionId: randomUUID(),
+          locale: fp.locale,
+          timezone: fp.timezone,
+          chromeVersion: fp.chromeVersion,
+          userAgent: fp.userAgent,
+          osVersion: fp.osVersion,
+        },
+      });
+    }
+    console.log(`[Discord] Adopted login identity for ${tokenId.slice(0, 12)}... Electron/${fp.userAgent.match(/Electron\/([\d.]+)/)?.[1] || "?"}`);
+  } catch (err) {
+    console.warn("[Discord] adoptFingerprint failed:", err instanceof Error ? err.message : String(err));
+  }
 }
 
 /**
