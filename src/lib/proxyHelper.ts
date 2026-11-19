@@ -59,6 +59,56 @@ function addTraffic(tokenId: string | undefined, requestBytes: number, responseB
   map.set(tokenId, cur);
 }
 
+/**
+ * Cầu dao cho lỗi 407.
+ *
+ * Gateway owl từ chối xác thực thì MỌI proxy trong pool đều trả 407 như nhau, và
+ * mỗi lần thử vẫn phải mở một đường hầm CONNECT mới → vẫn tính tiền dung lượng.
+ * Log thật cho thấy 12 lần 407 trong 6 giây cho một token; cộng dồn nhiều token
+ * là hàng trăm MB mỗi ngày cho những lần thử chắc chắn thất bại.
+ *
+ * Gặp 3 lỗi 407 liên tiếp thì ngừng gọi proxy PROXY_AUTH_BLOCK_MS (mặc định 10
+ * phút), trả lỗi ngay tại chỗ, không mở đường hầm nào nữa.
+ */
+const PROXY_AUTH_BLOCK_MS = Math.max(
+  60_000,
+  Number(process.env.PROXY_AUTH_BLOCK_MS || 10 * 60 * 1000),
+);
+
+declare global {
+  var dqaProxyAuthGuard: { failures: number; blockedUntil: number } | undefined;
+}
+
+function authGuard(): { failures: number; blockedUntil: number } {
+  if (!globalThis.dqaProxyAuthGuard) globalThis.dqaProxyAuthGuard = { failures: 0, blockedUntil: 0 };
+  return globalThis.dqaProxyAuthGuard;
+}
+
+/** Số ms proxy còn bị tạm khoá vì 407 (0 = đang dùng bình thường). */
+export function proxyAuthBlockedFor(): number {
+  const g = authGuard();
+  return Math.max(0, g.blockedUntil - Date.now());
+}
+
+function noteProxyAuthFailure(): void {
+  const g = authGuard();
+  g.failures += 1;
+  if (g.failures >= 3) {
+    g.blockedUntil = Date.now() + PROXY_AUTH_BLOCK_MS;
+    g.failures = 0;
+    console.warn(
+      `[ProxySticky] Gateway từ chối xác thực (407) 3 lần liên tiếp — tạm ngừng gọi proxy ` +
+        `${Math.round(PROXY_AUTH_BLOCK_MS / 60000)} phút để không đốt thêm traffic.`,
+    );
+  }
+}
+
+function noteProxyAuthSuccess(): void {
+  const g = authGuard();
+  g.failures = 0;
+  g.blockedUntil = 0;
+}
+
 export function getProxyTraffic(tokenId: string): ProxyTraffic {
   return trafficMap().get(tokenId) || { requests: 0, bytes: 0 };
 }
@@ -375,6 +425,16 @@ export async function fetchWithTokenProxy(
   options: RequestInit = {},
 ): Promise<Response> {
   const allowDirect = process.env.DISABLE_DIRECT_FALLBACK !== "1";
+
+  // Proxy đang bị gateway từ chối (407) → trả lỗi ngay, không mở đường hầm nào.
+  const blockedMs = proxyAuthBlockedFor();
+  if (blockedMs > 0) {
+    throw new Error(
+      `Proxy gateway đang từ chối xác thực (407) — tạm dừng gọi proxy ${Math.ceil(blockedMs / 60000)} phút ` +
+        `để không đốt traffic. Nạp thêm dung lượng/gói proxy rồi thử lại.`,
+    );
+  }
+
   const direct = async () => {
     const directOptions: any = { ...options };
     directOptions.headersTimeout = 15_000;
@@ -426,10 +486,13 @@ export async function fetchWithTokenProxy(
         );
         if (attempt === 0) continue; // đổi IP rồi thử lại trước khi kết luận
       }
+      noteProxyAuthSuccess();
       return res;
     } catch (err: any) {
+      const detail = describeFetchError(err);
+      if (detail.includes("407")) noteProxyAuthFailure();
       console.warn(
-        `[ProxySticky] ${tokenId.slice(0, 12)} ✗ ${binding.proxy.host}:${binding.proxy.port} — ${describeFetchError(err)}`,
+        `[ProxySticky] ${tokenId.slice(0, 12)} ✗ ${binding.proxy.host}:${binding.proxy.port} — ${detail}`,
       );
     }
   }
