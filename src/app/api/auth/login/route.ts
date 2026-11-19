@@ -93,6 +93,10 @@ export async function POST(request: NextRequest) {
     // phải chạy (login thẳng), không chặn user bằng lỗi 503.
     let usedProxy = false;
 
+    // Gateway trả 407 = nó từ chối user/pass, khác hẳn "proxy chết". Gặp 407 thì
+    // đổi proxy cũng vô ích (mọi proxy cùng một tài khoản), nên báo đúng bệnh.
+    let proxyAuthRejected = false;
+
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       // Pick next country
       const cc = countriesToTry[attempt % countriesToTry.length];
@@ -220,9 +224,15 @@ export async function POST(request: NextRequest) {
         }
       } catch (err: any) {
         // Proxy connection failed → release + thử proxy khác
-        console.warn(`[Auth Login] Proxy ${cc} failed: ${describeFetchError(err)}`);
+        const detail = describeFetchError(err);
+        console.warn(`[Auth Login] Proxy ${cc} failed: ${detail}`);
         releaseProxy(tokenId, cc);
-        lastError = err.message;
+        if (detail.includes("407")) {
+          proxyAuthRejected = true;
+          lastError = "gateway proxy từ chối xác thực (HTTP 407)";
+        } else {
+          lastError = detail;
+        }
         continue;
       }
     }
@@ -305,7 +315,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: `Không kết nối được proxy sau ${MAX_RETRIES} lần thử (${lastError}). Vui lòng chọn server khác hoặc thử lại sau.`,
+        error: proxyAuthRejected
+          ? `Proxy gateway từ chối xác thực (HTTP 407) sau ${MAX_RETRIES} lần thử. ` +
+            "Tài khoản proxy có thể đã hết traffic, hết hạn gói hoặc vượt số session đồng thời — " +
+            "kiểm tra dashboard owlproxy rồi thử lại."
+          : `Không kết nối được proxy sau ${MAX_RETRIES} lần thử (${lastError}). Vui lòng chọn server khác hoặc thử lại sau.`,
       },
       { status: 503 }
     );
