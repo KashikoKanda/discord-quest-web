@@ -103,6 +103,11 @@ function noteProxyAuthFailure(): void {
   }
 }
 
+/** Cho các chỗ tự gọi proxy (vd /api/auth/login) báo lỗi 407 để bật chế độ bảo trì. */
+export function reportProxyAuthFailure(): void {
+  noteProxyAuthFailure();
+}
+
 function noteProxyAuthSuccess(): void {
   const g = authGuard();
   g.failures = 0;

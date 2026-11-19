@@ -186,7 +186,11 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         return;
       }
       if (!res.ok || !data.success) {
-        setError(data.error || "Token không hợp lệ");
+        setError(
+          data.maintenance
+            ? "Hệ thống đang bảo trì (proxy tạm hết dung lượng). Bạn thử lại sau ít phút nhé."
+            : data.error || "Token không hợp lệ",
+        );
         setStatus("");
         setLoading(false);
         return;
@@ -778,6 +782,30 @@ export default function LoginPage() {
   });
   const login = useAppStore((s) => s.login);
 
+  // Chế độ bảo trì: proxy hết dung lượng (407) thì login chắc chắn fail, nên báo
+  // "đang bảo trì" thay vì để người dùng dán token rồi ăn lỗi đỏ.
+  const [maintenance, setMaintenance] = useState<{ reason: string; retryInSeconds: number } | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  const refreshStatus = useCallback(async () => {
+    setCheckingStatus(true);
+    try {
+      const res = await fetch("/api/status", { cache: "no-store" });
+      const data = await res.json();
+      setMaintenance(data?.maintenance ? { reason: data.reason || "Đang bảo trì", retryInSeconds: data.retryInSeconds || 0 } : null);
+    } catch {
+      /* giữ nguyên trạng thái cũ */
+    } finally {
+      setCheckingStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+    const t = setInterval(refreshStatus, 60_000);
+    return () => clearInterval(t);
+  }, [refreshStatus]);
+
   const handleLoginSuccess = useCallback((token: string, profile: DiscordProfileFromApi) => {
     setLoginSuccess(true);
     setTimeout(() => { login(token, profile as any); }, 900);
@@ -910,7 +938,33 @@ export default function LoginPage() {
               </div>
             )}
 
-            <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+            {maintenance ? (
+              <div className="rounded-xl border border-[#F5B544]/25 bg-[#F5B544]/[0.06] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 className="w-4 h-4 text-[#F5B544] animate-spin" />
+                  <p className="text-[13px] font-semibold text-[#F5B544]">Hệ thống đang bảo trì</p>
+                </div>
+                <p className="text-[12px] text-white/60 leading-relaxed mb-3">{maintenance.reason}</p>
+                {maintenance.retryInSeconds > 0 && (
+                  <p className="text-[11px] text-white/40 mb-3">
+                    Tự kiểm tra lại sau khoảng {Math.max(1, Math.ceil(maintenance.retryInSeconds / 60))} phút.
+                  </p>
+                )}
+                <Button
+                  onClick={refreshStatus}
+                  disabled={checkingStatus}
+                  className="w-full h-10 bg-white/[0.06] hover:bg-white/[0.1] text-white/80 text-xs rounded-lg border border-white/[0.08]"
+                >
+                  {checkingStatus ? (
+                    <span className="flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang kiểm tra...</span>
+                  ) : (
+                    <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5" /> Kiểm tra lại ngay</span>
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+            )}
 
           </div>
         </div>

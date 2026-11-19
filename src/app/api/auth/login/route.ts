@@ -3,7 +3,7 @@ import { initBuildVersion, adoptFingerprint } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
-import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError } from "@/lib/proxyHelper";
+import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getClientCountry } from "@/lib/geoCountry";
@@ -229,6 +229,7 @@ export async function POST(request: NextRequest) {
         releaseProxy(tokenId, cc);
         if (detail.includes("407")) {
           proxyAuthRejected = true;
+          reportProxyAuthFailure();
           lastError = "gateway proxy từ chối xác thực (HTTP 407)";
         } else {
           lastError = detail;
@@ -315,11 +316,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
+        // 407 = lỗi hạ tầng (hết traffic proxy), không phải lỗi của người dùng →
+        // trả cờ maintenance để UI hiện chế độ bảo trì thay vì bắt họ "chọn server khác".
+        maintenance: proxyAuthRejected,
         error: proxyAuthRejected
-          ? `Proxy gateway từ chối xác thực (HTTP 407) sau ${MAX_RETRIES} lần thử. ` +
-            "Tài khoản proxy có thể đã hết traffic, hết hạn gói hoặc vượt số session đồng thời — " +
-            "kiểm tra dashboard owlproxy rồi thử lại."
-          : `Không kết nối được proxy sau ${MAX_RETRIES} lần thử (${lastError}). Vui lòng chọn server khác hoặc thử lại sau.`,
+          ? "Hệ thống đang bảo trì: proxy tạm thời không dùng được (gateway từ chối xác thực 407). " +
+            "Bọn mình đang xử lý, bạn thử lại sau ít phút nhé."
+          : `Không kết nối được proxy sau ${MAX_RETRIES} lần thử (${lastError}). Vui lòng thử lại sau.`,
       },
       { status: 503 }
     );
