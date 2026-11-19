@@ -17,9 +17,7 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     maintenance,
-    reason: maintenance
-      ? "Proxy tạm thời không dùng được (gateway từ chối xác thực 407). Hệ thống tự kiểm tra lại."
-      : null,
+    reason: maintenance ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút." : null,
     retryInSeconds: maintenance ? Math.ceil(blockedMs / 1000) : 0,
     checkedAt: new Date().toISOString(),
   });

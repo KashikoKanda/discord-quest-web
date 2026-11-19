@@ -3,7 +3,7 @@ import { initBuildVersion, adoptFingerprint } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
-import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure } from "@/lib/proxyHelper";
+import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure, proxyAuthBlockedFor } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getClientCountry } from "@/lib/geoCountry";
@@ -26,6 +26,15 @@ import { getClientCountry } from "@/lib/geoCountry";
  */
 export async function POST(request: NextRequest) {
   try {
+    // Bảo trì thì chặn login ngay từ cửa: không gọi proxy, không gọi Discord,
+    // không tốn một byte dung lượng nào, người dùng nhận đúng một câu duy nhất.
+    if (proxyAuthBlockedFor() > 0) {
+      return NextResponse.json(
+        { success: false, maintenance: true, error: "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút." },
+        { status: 503 },
+      );
+    }
+
     const { token, sessionId: clientSessionId, proxyCountry } = await request.json();
 
     if (!token || typeof token !== "string") {
@@ -320,9 +329,8 @@ export async function POST(request: NextRequest) {
         // trả cờ maintenance để UI hiện chế độ bảo trì thay vì bắt họ "chọn server khác".
         maintenance: proxyAuthRejected,
         error: proxyAuthRejected
-          ? "Hệ thống đang bảo trì: proxy tạm thời không dùng được (gateway từ chối xác thực 407). " +
-            "Bọn mình đang xử lý, bạn thử lại sau ít phút nhé."
-          : `Không kết nối được proxy sau ${MAX_RETRIES} lần thử (${lastError}). Vui lòng thử lại sau.`,
+          ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút."
+          : `Không đăng nhập được sau ${MAX_RETRIES} lần thử. Vui lòng thử lại sau.`,
       },
       { status: 503 }
     );

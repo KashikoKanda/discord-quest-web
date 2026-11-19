@@ -188,7 +188,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       if (!res.ok || !data.success) {
         setError(
           data.maintenance
-            ? "Hệ thống đang bảo trì (proxy tạm hết dung lượng). Bạn thử lại sau ít phút nhé."
+            ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút."
             : data.error || "Token không hợp lệ",
         );
         setStatus("");
