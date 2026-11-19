@@ -211,11 +211,22 @@ export async function connectGateway(
     return state.connectPromise;
   }
 
-  // Gateway phải đi CÙNG IP với REST của token này. Trước đây gateway nối trực
-  // tiếp từ IP Render còn REST qua proxy → Identify và REST lệch IP, Discord
-  // đóng phiên (4004) và token bị coi như thu hồi.
-  const { getStickyWsAgent } = await import("./proxyHelper");
-  const wsAgent = await getStickyWsAgent(tokenId).catch(() => null);
+  // Gateway KHÔNG đi qua proxy owlproxy.
+  //
+  // Proxy owl tính tiền theo dung lượng và session chỉ sống 5 phút: một socket
+  // gateway nằm trên proxy đó bị đứt mỗi 5 phút, mỗi lần nối lại Discord gửi
+  // READY (hàng trăm KB) → một token đốt vài GB/ngày mà chẳng được gì, đồng thời
+  // mỗi lần nối lại là một IP mới. Đo thực tế: 1.3GB chỉ riêng cho VN.
+  //
+  // Giờ socket giữ trực tiếp từ server (miễn phí, không đứt, một IP cố định cho
+  // suốt phiên), còn proxy chỉ dùng cho các request REST/enroll ngắn. Muốn quay
+  // lại hành vi cũ thì đặt GATEWAY_VIA_PROXY=1.
+  const gatewayViaProxy = process.env.GATEWAY_VIA_PROXY === "1";
+  let wsAgent: unknown = undefined;
+  if (gatewayViaProxy) {
+    const { getStickyWsAgent } = await import("./proxyHelper");
+    wsAgent = await getStickyWsAgent(tokenId).catch(() => null);
+  }
 
   state.connectPromise = new Promise((resolve) => {
     try {
@@ -238,7 +249,9 @@ export async function connectGateway(
       };
 
       ws.on("open", () => {
-        console.log(`[Gateway:${tokenId.slice(0, 12)}] Connected`);
+        console.log(
+          `[Gateway:${tokenId.slice(0, 12)}] Connected (${gatewayViaProxy ? "qua proxy" : "trực tiếp, không tốn traffic proxy"})`,
+        );
       });
 
       ws.on("message", (data: WebSocket.Data) => {

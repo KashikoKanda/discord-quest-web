@@ -90,6 +90,11 @@ interface TokenState {
 
 // How often the auto-quest loop re-checks for unfinished quests
 const AUTO_LOOP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes (was 1 minute) — tránh API spam
+/** Không còn quest để làm → kiểm tra lại thưa hơn (proxy tính tiền theo dung lượng). */
+const AUTO_LOOP_IDLE_MS = Math.max(
+  60_000,
+  Number(process.env.AUTO_LOOP_IDLE_MS || 30 * 60 * 1000),
+);
 
 /**
  * How many quests one account may run at the same time in multi mode.
@@ -302,18 +307,8 @@ async function processTokenQueue(tokenId: string): Promise<void> {
         }
       } else {
         let data: any = null;
-        let raw = "";
-        try {
-          raw = await res.text();
-          data = raw ? JSON.parse(raw) : null;
-        } catch { /* no body */ }
-        // Ước tính dung lượng: body vào + body ra + ~1.2KB overhead TLS/header.
-        const st0 = getGlobalState().get(tokenId);
-        if (st0) {
-          st0.proxyRequests = (st0.proxyRequests || 0) + 1;
-          st0.proxyBytes =
-            (st0.proxyBytes || 0) + raw.length + JSON.stringify(req.body || {}).length + 1200;
-        }
+        try { data = await res.json(); } catch { /* no body */ }
+        // Traffic đã được fetchWithTokenProxy đếm tập trung (mọi request qua proxy).
         req.resolve({ status: res.status, ok: res.ok, data });
       }
     } catch (err) {
@@ -1134,8 +1129,8 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
 
   state.status = "running";
   state.runStopped = false;
-  state.proxyRequests = 0;
-  state.proxyBytes = 0;
+  const { resetProxyTraffic } = await import("./proxyHelper");
+  resetProxyTraffic(tokenId);
   addLog(tokenId, "info", "Bắt đầu xử lý tất cả quest...");
 
   try {
@@ -1273,13 +1268,12 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
       state.status = "idle";
       addLog(tokenId, "success", "Đã xử lý xong tất cả quest!");
     }
-    if (state.proxyRequests) {
-      const mb = ((state.proxyBytes || 0) / 1024 / 1024).toFixed(2);
-      addLog(
-        tokenId,
-        "info",
-        `Lượt này dùng ${state.proxyRequests} request qua proxy (~${mb} MB ước tính).`,
-      );
+    {
+      const { getProxyTraffic } = await import("./proxyHelper");
+      const t = getProxyTraffic(tokenId);
+      if (t.requests > 0) {
+        addLog(tokenId, "info", `Lượt này: ${t.requests} request qua proxy, ~${(t.bytes / 1024 / 1024).toFixed(2)} MB.`);
+      }
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1312,8 +1306,13 @@ async function runAutoQuestLoopTick(tokenId: string): Promise<void> {
   const state = getGlobalState().get(tokenId);
   if (!state) return;
   if (!state.autoQuestEnabled) return;
-  if (state.autoQuestLoopRunning) return; // skip overlap
+  if (!state.autoQuestLoopRunning) {
+    // mỗi tick đo lại traffic để biết vòng này tốn bao nhiêu dung lượng proxy
+  } else {
+    return; // skip overlap
+  }
 
+  let idleBackoff = false;
   state.autoQuestLoopRunning = true;
   try {
     // Don't kick off a new batch if there's already one running
@@ -1328,7 +1327,15 @@ async function runAutoQuestLoopTick(tokenId: string): Promise<void> {
       });
 
       if (doableQuests.length === 0) {
-        addLog(tokenId, "info", "[Auto-Quest] Không có quest nào cần làm, chờ tick tiếp theo.");
+        // Mỗi lần fetchDiscordQuests là một payload lớn (danh sách quest) đi qua
+        // proxy tính dung lượng. Không có quest thì 5 phút/lần là đốt tiền vô ích:
+        // giãn ra AUTO_LOOP_IDLE_MS (mặc định 30 phút).
+        idleBackoff = true;
+        addLog(
+          tokenId,
+          "info",
+          `[Auto-Quest] Không có quest nào cần làm, nghỉ ${Math.round(AUTO_LOOP_IDLE_MS / 60000)} phút rồi kiểm tra lại.`,
+        );
       } else {
         addLog(tokenId, "info", `[Auto-Quest] Phát hiện ${doableQuests.length} quest chưa làm, đang xử lý...`);
         // processAllQuests(tokenId, true) → skipAutoClaim=true: only completes quests.
@@ -1348,11 +1355,13 @@ async function runAutoQuestLoopTick(tokenId: string): Promise<void> {
     addLog(tokenId, "error", `[Auto-Quest] Lỗi tick: ${msg}`);
   } finally {
     state.autoQuestLoopRunning = false;
+    // Không có quest → nghỉ dài; vừa làm xong quest → 5 phút như cũ.
+    const nextDelay = idleBackoff ? AUTO_LOOP_IDLE_MS : AUTO_LOOP_INTERVAL_MS;
     // Schedule next tick — only if still enabled
     if (state.autoQuestEnabled) {
       state.autoQuestLoopTimer = setTimeout(() => {
         runAutoQuestLoopTick(tokenId).catch(() => { /* swallow */ });
-      }, AUTO_LOOP_INTERVAL_MS);
+      }, nextDelay);
     }
   }
 }

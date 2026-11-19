@@ -29,6 +29,44 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // Refresh every 5 minutes
  * sự cố proxy đều hiện một câu vô nghĩa và không biết là do gateway chết hay do
  * proxy của tài khoản bị khoá.
  */
+/**
+ * Đếm traffic THẬT đã đi qua proxy cho từng token.
+ *
+ * Proxy owl tính tiền theo dung lượng, nên phải biết cái gì đốt tiền chứ không
+ * đoán. Mọi request qua fetchWithTokenProxy đều cộng vào đây: body gửi đi +
+ * content-length trả về + ~1.2KB overhead TLS/header của đường hầm proxy.
+ */
+export interface ProxyTraffic {
+  requests: number;
+  bytes: number;
+}
+
+declare global {
+  var dqaProxyTraffic: Map<string, ProxyTraffic> | undefined;
+}
+
+function trafficMap(): Map<string, ProxyTraffic> {
+  if (!globalThis.dqaProxyTraffic) globalThis.dqaProxyTraffic = new Map();
+  return globalThis.dqaProxyTraffic;
+}
+
+function addTraffic(tokenId: string | undefined, requestBytes: number, responseBytes: number): void {
+  if (!tokenId) return;
+  const map = trafficMap();
+  const cur = map.get(tokenId) || { requests: 0, bytes: 0 };
+  cur.requests += 1;
+  cur.bytes += requestBytes + responseBytes + 1200;
+  map.set(tokenId, cur);
+}
+
+export function getProxyTraffic(tokenId: string): ProxyTraffic {
+  return trafficMap().get(tokenId) || { requests: 0, bytes: 0 };
+}
+
+export function resetProxyTraffic(tokenId: string): void {
+  trafficMap().set(tokenId, { requests: 0, bytes: 0 });
+}
+
 export function describeFetchError(err: unknown): string {
   const e = err as { message?: string; code?: string; cause?: unknown };
   const parts: string[] = [e?.message || String(err)];
@@ -366,6 +404,11 @@ export async function fetchWithTokenProxy(
       fetchOptions.headersTimeout = 15_000;
       fetchOptions.bodyTimeout = 15_000;
       const res = (await undiciFetch(url, fetchOptions)) as unknown as Response;
+      addTraffic(
+        tokenId,
+        typeof fetchOptions.body === "string" ? fetchOptions.body.length : 0,
+        Number(res.headers.get("content-length") || 0),
+      );
       // 401 có thể do IP proxy hoặc do token. Phân biệt bằng body: Discord luôn
       // trả JSON có "message"/"code"; proxy trả text/HTML (401 auth, hết hạn mức).
       if (res.status === 401) {
