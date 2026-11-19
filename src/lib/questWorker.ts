@@ -83,6 +83,9 @@ interface TokenState {
    * song tự thoát, nên multi nhìn như "không xử lý hết".
    */
   runStopped?: boolean;
+  /** Số request + byte ước tính đã đi qua proxy trong lượt hiện tại (để biết đang đốt bao nhiêu traffic). */
+  proxyRequests?: number;
+  proxyBytes?: number;
 }
 
 // How often the auto-quest loop re-checks for unfinished quests
@@ -94,6 +97,19 @@ const AUTO_LOOP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes (was 1 minute) — tr�
  * giống người dùng thật. Đẩy cao hơn dễ bị Discord gắn cờ và thu hồi token.
  */
 const QUEST_CONCURRENCY = Math.max(1, Number(process.env.QUEST_CONCURRENCY || 6));
+
+/**
+ * Nhịp poll video-progress. Proxy tính tiền theo dung lượng nên mỗi request
+ * (TLS + header + body) tốn ~2-3KB: quest 15 phút poll 2s = 450 request ≈ 1MB,
+ * vài chục quest là bay cả GB. Vì mỗi nhịp ta đẩy timestamp tới mốc Discord cho
+ * phép (elapsed + 3s) nên KHÔNG cần poll dày: giãn theo thời lượng còn lại,
+ * tối đa 30s/nhịp, quest vẫn xong đúng giờ mà số request giảm ~15 lần.
+ */
+const VIDEO_POLL_MIN_MS = Math.max(1000, Number(process.env.VIDEO_POLL_MIN_MS || 2000));
+const VIDEO_POLL_MAX_MS = Math.max(
+  VIDEO_POLL_MIN_MS,
+  Number(process.env.VIDEO_POLL_MAX_MS || 30000),
+);
 
 /** Chạy `worker` trên từng item với tối đa `limit` việc song song. */
 async function runWithConcurrency<T>(
@@ -286,7 +302,18 @@ async function processTokenQueue(tokenId: string): Promise<void> {
         }
       } else {
         let data: any = null;
-        try { data = await res.json(); } catch { /* no body */ }
+        let raw = "";
+        try {
+          raw = await res.text();
+          data = raw ? JSON.parse(raw) : null;
+        } catch { /* no body */ }
+        // Ước tính dung lượng: body vào + body ra + ~1.2KB overhead TLS/header.
+        const st0 = getGlobalState().get(tokenId);
+        if (st0) {
+          st0.proxyRequests = (st0.proxyRequests || 0) + 1;
+          st0.proxyBytes =
+            (st0.proxyBytes || 0) + raw.length + JSON.stringify(req.body || {}).length + 1200;
+        }
         req.resolve({ status: res.status, ok: res.ok, data });
       }
     } catch (err) {
@@ -372,7 +399,6 @@ async function doWatchVideoQuest(
   // quest enroll từ lâu (hoặc bị bỏ dở) xong gần như ngay lập tức — trước đây
   // nó cứ bò 5s/nhịp nên tiến độ video rất chậm.
   const maxFuture = 3; // buffer nhỏ để timestamp không vượt thời gian thật
-  const interval = 2; // nhịp gửi (giây)
   let secondsDone: number = userStatus?.progress
     ? ((userStatus.progress as Record<string, unknown>)[questType] as { value?: number } | undefined)?.value ?? 0
     : 0;
@@ -444,8 +470,12 @@ async function doWatchVideoQuest(
       break;
     }
 
-    // Jitter ±0.8s: nhịp đều tăm tắp mỗi 2.000s là dấu hiệu bot rõ ràng.
-    await sleep(interval * 1000 + Math.floor(Math.random() * 1600) - 800);
+    // Nhịp thích ứng: còn nhiều thời lượng thì giãn ra (tối đa VIDEO_POLL_MAX_MS),
+    // gần đích thì dày lại để không trễ quest. Jitter để nhịp không tròn trịa.
+    const remainingSec = Math.max(0, secondsNeeded - secondsDone);
+    const adaptiveMs = Math.round((remainingSec / 10) * 1000);
+    const pollMs = Math.min(VIDEO_POLL_MAX_MS, Math.max(VIDEO_POLL_MIN_MS, adaptiveMs));
+    await sleep(pollMs + Math.floor(Math.random() * 1600) - 800);
   }
 
   // aiko: If not completed after loop, send final video-progress with secondsNeeded
@@ -1104,6 +1134,8 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
 
   state.status = "running";
   state.runStopped = false;
+  state.proxyRequests = 0;
+  state.proxyBytes = 0;
   addLog(tokenId, "info", "Bắt đầu xử lý tất cả quest...");
 
   try {
@@ -1240,6 +1272,14 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
     if (state.status === "running") {
       state.status = "idle";
       addLog(tokenId, "success", "Đã xử lý xong tất cả quest!");
+    }
+    if (state.proxyRequests) {
+      const mb = ((state.proxyBytes || 0) / 1024 / 1024).toFixed(2);
+      addLog(
+        tokenId,
+        "info",
+        `Lượt này dùng ${state.proxyRequests} request qua proxy (~${mb} MB ước tính).`,
+      );
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
