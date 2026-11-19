@@ -939,28 +939,10 @@ export default function LoginPage() {
             )}
 
             {maintenance ? (
-              <div className="rounded-xl border border-[#F5B544]/25 bg-[#F5B544]/[0.06] p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Loader2 className="w-4 h-4 text-[#F5B544] animate-spin" />
-                  <p className="text-[13px] font-semibold text-[#F5B544]">Hệ thống đang bảo trì</p>
-                </div>
-                <p className="text-[12px] text-white/60 leading-relaxed mb-3">{maintenance.reason}</p>
-                {maintenance.retryInSeconds > 0 && (
-                  <p className="text-[11px] text-white/40 mb-3">
-                    Tự kiểm tra lại sau khoảng {Math.max(1, Math.ceil(maintenance.retryInSeconds / 60))} phút.
-                  </p>
-                )}
-                <Button
-                  onClick={refreshStatus}
-                  disabled={checkingStatus}
-                  className="w-full h-10 bg-white/[0.06] hover:bg-white/[0.1] text-white/80 text-xs rounded-lg border border-white/[0.08]"
-                >
-                  {checkingStatus ? (
-                    <span className="flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang kiểm tra...</span>
-                  ) : (
-                    <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5" /> Kiểm tra lại ngay</span>
-                  )}
-                </Button>
+              <div className="rounded-xl border border-[#F5B544]/25 bg-[#F5B544]/[0.06] p-5 text-center">
+                <Loader2 className="w-5 h-5 text-[#F5B544] animate-spin mx-auto mb-3" />
+                <p className="text-[14px] font-semibold text-[#F5B544] mb-1.5">Hệ thống đang bảo trì</p>
+                <p className="text-[12px] text-white/50 leading-relaxed">Vui lòng quay lại sau ít phút.</p>
               </div>
             ) : (
               <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
