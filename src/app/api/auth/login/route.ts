@@ -3,7 +3,7 @@ import { initBuildVersion, adoptFingerprint } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
-import { buildProxyUrl, getAllProxies, bindStickyProxy } from "@/lib/proxyHelper";
+import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getClientCountry } from "@/lib/geoCountry";
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
         }
       } catch (err: any) {
         // Proxy connection failed → release + thử proxy khác
-        console.warn(`[Auth Login] Proxy ${cc} failed: ${err.message}`);
+        console.warn(`[Auth Login] Proxy ${cc} failed: ${describeFetchError(err)}`);
         releaseProxy(tokenId, cc);
         lastError = err.message;
         continue;

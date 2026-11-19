@@ -24,6 +24,26 @@ let cacheLoadedAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // Refresh every 5 minutes
 
 /**
+ * "fetch failed" của undici không nói gì cả — nguyên nhân thật (ENOTFOUND,
+ * ECONNREFUSED, ETIMEDOUT, TLS...) nằm trong err.cause. Không bóc ra thì mọi
+ * sự cố proxy đều hiện một câu vô nghĩa và không biết là do gateway chết hay do
+ * proxy của tài khoản bị khoá.
+ */
+export function describeFetchError(err: unknown): string {
+  const e = err as { message?: string; code?: string; cause?: unknown };
+  const parts: string[] = [e?.message || String(err)];
+  let cause = e?.cause as { message?: string; code?: string; errno?: string; address?: string; port?: number } | undefined;
+  for (let depth = 0; cause && depth < 3; depth++) {
+    const bit = [cause.code, cause.message, cause.address && `${cause.address}:${cause.port}`]
+      .filter(Boolean)
+      .join(" / ");
+    if (bit) parts.push(`cause: ${bit}`);
+    cause = (cause as { cause?: typeof cause }).cause;
+  }
+  return parts.join(" | ");
+}
+
+/**
  * Get all proxies from the pool (cached for 5 minutes).
  */
 export async function getAllProxies(): Promise<ProxyEntry[]> {
@@ -366,7 +386,7 @@ export async function fetchWithTokenProxy(
       return res;
     } catch (err: any) {
       console.warn(
-        `[ProxySticky] ${tokenId.slice(0, 12)} ✗ ${binding.proxy.host}:${binding.proxy.port} — ${err.message}`,
+        `[ProxySticky] ${tokenId.slice(0, 12)} ✗ ${binding.proxy.host}:${binding.proxy.port} — ${describeFetchError(err)}`,
       );
     }
   }
