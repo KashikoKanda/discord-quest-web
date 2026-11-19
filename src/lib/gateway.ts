@@ -27,6 +27,8 @@ interface GatewayState {
   resumeUrl: string | null;
   /** Đang trong quá trình connect — chống mở 2 socket cho cùng token. */
   connectPromise?: Promise<boolean>;
+  /** Số lần nối lại liên tiếp — dùng cho backoff, reset khi READY. */
+  reconnectAttempts?: number;
   // Fingerprint data - must match x-super-properties in REST calls
   fingerprint: {
     client_launch_id: string;
@@ -276,9 +278,19 @@ export async function connectGateway(
           clearInterval(state.heartbeatInterval);
           state.heartbeatInterval = null;
         }
-        // Auto-reconnect if not intentional
+        // Auto-reconnect if not intentional — có backoff.
+        // Trước đây nối lại đúng 5 giây một lần, không giới hạn: log Render cho
+        // thấy gần 50 lần "407 / Closed 1006" trong 1 phút cho một token. Vừa là
+        // mẫu bot lộ liễu, vừa đốt traffic proxy (mỗi lần CONNECT là một lần tính
+        // tiền). Giờ 5s → 15s → 45s → 2 phút → tối đa 5 phút, reset khi READY.
         if (code !== 1000 && code !== 4004) {
-          setTimeout(() => connectGateway(tokenId, token), 5000);
+          const attempt = (state.reconnectAttempts || 0) + 1;
+          state.reconnectAttempts = attempt;
+          const delay = Math.min(5000 * Math.pow(3, attempt - 1), 5 * 60 * 1000);
+          console.log(
+            `[Gateway:${tokenId.slice(0, 12)}] Nối lại sau ${Math.round(delay / 1000)}s (lần ${attempt})`,
+          );
+          setTimeout(() => connectGateway(tokenId, token), delay);
         }
         done(false);
       });
@@ -345,6 +357,7 @@ function handleGatewayMessage(
         state.sessionId = payload.d.session_id;
         state.resumeUrl = payload.d.resume_gateway_url;
         state.ready = true;
+    state.reconnectAttempts = 0;
         console.log(`[Gateway:${tokenId.slice(0, 12)}] READY - session ${state.sessionId?.slice(0, 8)}`);
         onReady(true);
       } else if (payload.t === "RESUMED") {
