@@ -833,6 +833,7 @@ export default function LoginPage() {
     return "";
   });
   const login = useAppStore((s) => s.login);
+  const [oauthError, setOauthError] = useState("");
 
   // Chế độ bảo trì: proxy hết dung lượng (407) thì login chắc chắn fail, nên báo
   // "đang bảo trì" thay vì để người dùng dán token rồi ăn lỗi đỏ.
@@ -857,6 +858,28 @@ export default function LoginPage() {
     const t = setInterval(refreshStatus, 60_000);
     return () => clearInterval(t);
   }, [refreshStatus]);
+
+  // Nhận kết quả từ luồng OAuth Discord (?discord_login=1 | ?discord_error=...)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const oauthErr = params.get("discord_error");
+    if (oauthErr) {
+      setOauthError(oauthErr);
+      window.history.replaceState({}, "", "/");
+      return;
+    }
+    if (params.get("discord_login") !== "1") return;
+    window.history.replaceState({}, "", "/");
+    fetch("/api/auth/discord/session", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: any) => {
+        if (d?.success && d.token) handleLoginSuccess(d.token, d.profile);
+        else setOauthError(d?.error || "Đăng nhập Discord thất bại.");
+      })
+      .catch(() => setOauthError("Đăng nhập Discord thất bại."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLoginSuccess = useCallback((token: string, profile: DiscordProfileFromApi) => {
     setLoginSuccess(true);
@@ -1031,7 +1054,23 @@ export default function LoginPage() {
                 <p className="text-[12px] text-white/50 leading-relaxed">Vui lòng quay lại sau ít phút.</p>
               </div>
             ) : (
-              <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = "/api/auth/discord/start"; }}
+                  className="w-full h-12 rounded-xl flex items-center justify-center gap-2.5 text-[14px] font-semibold text-white bg-[#5865F2] hover:bg-[#4752C4] transition-colors duration-200"
+                >
+                  <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current"><path d={DISCORD_PATH} /></svg>
+                  Đăng nhập với Discord
+                </button>
+                <div className="flex items-center gap-3">
+                  <span className="h-px flex-1 bg-white/10" />
+                  <span className="text-[11px] text-white/35">hoặc dán token</span>
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
+                {oauthError && (<p className="text-[12px] text-[#F87171] leading-relaxed">{oauthError}</p>)}
+                <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+              </div>
             )}
 
           </div>
