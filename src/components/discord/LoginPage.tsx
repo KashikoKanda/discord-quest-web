@@ -979,7 +979,15 @@ export default function LoginPage() {
 
         {/* RIGHT: login card */}
         <div className="flex items-center justify-center animate-scale-in" style={{ animationDelay: "150ms" }}>
-          <div className={`login-card glass rounded-3xl p-6 lg:p-8 w-full max-w-[460px] transition-all duration-500 ${loginSuccess ? "login-success-anim" : ""}`}>
+          <div
+            onMouseMove={(e) => {
+              const el = e.currentTarget;
+              const r = el.getBoundingClientRect();
+              el.style.setProperty("--mx", `${e.clientX - r.left}px`);
+              el.style.setProperty("--my", `${e.clientY - r.top}px`);
+            }}
+            className={`login-spot glass rounded-3xl p-6 lg:p-8 w-full max-w-[460px] transition-all duration-500 ${loginSuccess ? "login-success-anim" : ""}`}
+          >
             {/* Card header */}
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">

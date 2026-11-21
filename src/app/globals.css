@@ -1645,3 +1645,49 @@
   .login-card::before, .lp-beam, .lp-dust, .lp-progress > span, .btn-shine::after { animation: none !important; }
   .animate-lp-shake, .animate-lp-pop { animation: none !important; }
 }
+
+/* Card login: quầng sáng thở + đèn rọi theo con trỏ (thay viền xoay) */
+@keyframes lp-breathe {
+  0%, 100% { opacity: .5; transform: scale(.97); }
+  50%      { opacity: .95; transform: scale(1.04); }
+}
+@keyframes lp-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+.login-spot {
+  position: relative;
+  isolation: isolate;
+  animation: lp-float 11s ease-in-out infinite;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 1px 0 0 rgba(255, 255, 255, 0.12) inset,
+    0 30px 90px -30px rgba(88, 101, 242, 0.55);
+}
+.login-spot::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  z-index: -1;
+  border-radius: 40px;
+  filter: blur(42px);
+  background:
+    radial-gradient(58% 58% at 28% 8%, rgba(88, 101, 242, 0.62), transparent 70%),
+    radial-gradient(52% 52% at 82% 92%, rgba(232, 121, 249, 0.45), transparent 70%);
+  animation: lp-breathe 8s ease-in-out infinite;
+}
+.login-spot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .4s ease;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.10), transparent 62%);
+}
+.login-spot:hover::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .login-spot { animation: none; }
+  .login-spot::before { animation: none; }
+}
