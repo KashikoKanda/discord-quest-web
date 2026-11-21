@@ -8,6 +8,7 @@ import {
   ShieldCheck, Eye, EyeOff, AlertTriangle, ArrowRight,
   Zap, Clock, Trophy, Lock, Fingerprint,
   ChevronRight, KeyRound, Globe, Loader2, Check, MapPin, Smartphone, CheckCircle2, RefreshCw,
+  Clipboard, Sparkles,
 } from "lucide-react";
 
 /* Discord SVG logo path (preserved per hard constraint #5) */
@@ -158,6 +159,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");  // "connecting" | "connected" | ""
+  const [pasted, setPasted] = useState(false);
 
   const handleLogin = async () => {
     if (!tokenInput.trim()) { setError("Vui lòng nhập Discord token"); return; }
@@ -211,62 +213,112 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   };
 
   const isLoading = loading || parentLoading;
+  const tokenLen = tokenInput.trim().length;
+  const looksValid = tokenLen >= 50;
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) { setTokenInput(text.trim()); setError(""); setPasted(true); setTimeout(() => setPasted(false), 1400); }
+    } catch {
+      /* trình duyệt chặn clipboard → để người dùng tự dán */
+    }
+  };
 
   return (
     <div>
-      <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">
-        Discord Token
-      </label>
-      <div className="relative mb-3">
-        <Input
-          type={showToken ? "text" : "password"}
-          placeholder="Dán token vào đây..."
-          value={tokenInput}
-          onChange={(e) => setTokenInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !isLoading && handleLogin()}
-          autoComplete="off"
-          data-form-type="other"
-          data-lpignore="true"
-          disabled={isLoading}
-          className="bg-white/[0.03] border-white/[0.08] text-white placeholder:text-white/30 h-12 pr-12 font-mono text-sm rounded-lg focus:border-[#5865F2]/50 focus:bg-white/[0.05] transition-all duration-200"
-        />
-        <button
-          onClick={() => setShowToken(!showToken)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md flex items-center justify-center text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors"
-          type="button"
-          tabIndex={-1}
-        >
-          {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-        </button>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-[11px] font-semibold text-white/45 uppercase tracking-[0.14em]">
+          Discord Token
+        </label>
+        <span className={`text-[10px] font-mono tabular-nums transition-colors duration-300 ${
+          looksValid ? "text-[#3DD68C]" : tokenLen > 0 ? "text-white/40" : "text-white/20"
+        }`}>
+          {tokenLen > 0 ? `${tokenLen} ký tự` : "chưa nhập"}
+        </span>
+      </div>
+
+      <div className={`token-shell mb-3 ${looksValid ? "is-valid" : ""}`}>
+        <div className="relative rounded-[0.9rem] bg-white/[0.035] border border-white/[0.08] overflow-hidden">
+          <div className="absolute inset-y-0 left-0 w-9 flex items-center justify-center pointer-events-none">
+            <KeyRound className={`w-4 h-4 transition-colors duration-300 ${looksValid ? "text-[#3DD68C]" : "text-white/25"}`} />
+          </div>
+          <Input
+            type={showToken ? "text" : "password"}
+            placeholder="Dán token tài khoản Discord..."
+            value={tokenInput}
+            onChange={(e) => { setTokenInput(e.target.value); if (error) setError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && !isLoading && handleLogin()}
+            autoComplete="off"
+            data-form-type="other"
+            data-lpignore="true"
+            disabled={isLoading}
+            className="h-14 pl-9 pr-[92px] bg-transparent border-0 text-white placeholder:text-white/25 font-mono text-[13px] tracking-tight focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={pasteFromClipboard}
+              disabled={isLoading}
+              tabIndex={-1}
+              title="Dán từ clipboard"
+              className="h-8 px-2 rounded-lg flex items-center gap-1 text-[11px] font-medium text-white/45 hover:text-white hover:bg-white/[0.07] transition-all duration-200 disabled:opacity-40"
+            >
+              {pasted ? <Check className="w-3.5 h-3.5 text-[#3DD68C]" /> : <Clipboard className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{pasted ? "Đã dán" : "Dán"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowToken(!showToken)}
+              tabIndex={-1}
+              title={showToken ? "Ẩn token" : "Hiện token"}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/40 hover:text-white hover:bg-white/[0.07] transition-all duration-200"
+            >
+              {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-3 flex items-center gap-2 p-2.5 rounded-lg bg-[#F6606F]/[0.08] border border-[#F6606F]/20 text-[#F6606F] text-xs animate-scale-in">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          {error}
+        <div className="mb-3 flex items-start gap-2 p-2.5 rounded-xl bg-[#F6606F]/[0.08] border border-[#F6606F]/20 text-[#F6606F] text-xs animate-lp-shake">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+          <span className="leading-relaxed">{error}</span>
         </div>
       )}
 
       <Button
         onClick={handleLogin}
         disabled={isLoading || !tokenInput.trim()}
-        className="w-full h-12 bg-[#5865F2] hover:bg-[#4752C4] text-white font-semibold text-sm rounded-lg transition-all duration-300 hover:shadow-[0_12px_36px_rgba(88,101,242,0.55),0_0_24px_rgba(94,106,210,0.4)] active:scale-[0.98] hover:scale-[1.01] disabled:opacity-60 disabled:hover:scale-100 relative overflow-hidden btn-sweep group"
+        className="btn-shine group relative overflow-hidden w-full h-14 rounded-xl font-semibold text-[14px] text-white transition-all duration-300
+                   bg-[linear-gradient(135deg,#5865F2_0%,#6D5BF6_45%,#8B5CF6_100%)]
+                   hover:shadow-[0_18px_46px_-12px_rgba(109,91,246,0.85)]
+                   active:scale-[0.985] hover:-translate-y-[1px]
+                   disabled:opacity-55 disabled:hover:translate-y-0 disabled:hover:shadow-none"
       >
-        {isLoading ? (
+        {status === "connected" ? (
+          <span className="flex items-center gap-2 animate-lp-pop">
+            <CheckCircle2 className="w-4 h-4" /> Đã đăng nhập
+          </span>
+        ) : isLoading ? (
           <span className="flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
             {status === "connecting" ? "Đang xử lý..." : "Đang đăng nhập..."}
           </span>
         ) : (
           <span className="flex items-center gap-2">
-            Đăng nhập <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            Đăng nhập
+            <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
           </span>
+        )}
+        {isLoading && status !== "connected" && (
+          <span className="lp-progress"><span /></span>
         )}
       </Button>
 
-      <div className="mt-4 flex items-center gap-2 text-[10px] text-white/30">
+      <div className="mt-4 flex items-center justify-center gap-1.5 text-[10.5px] text-white/30">
         <Lock className="w-3 h-3" />
-        <span>Token theo phiên đăng nhập, hết hạn khi đăng xuất Discord.</span>
+        <span>Token chỉ dùng trong phiên, hết hạn khi đăng xuất Discord</span>
       </div>
     </div>
   );
@@ -836,6 +888,32 @@ export default function LoginPage() {
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40vw] h-[40vw] rounded-full aurora-blob-3 gpu-layer"
           style={{ background: "radial-gradient(circle, rgba(61, 214, 140, 0.15) 0%, rgba(61, 214, 140, 0.04) 40%, transparent 70%)" }}
         />
+
+        {/* Tia sáng quét chéo + bụi lơ lửng cho cảm giác "sống" */}
+        <div className="lp-beam" style={{ left: "8%", animationDelay: "0s" }} />
+        <div className="lp-beam" style={{ left: "58%", animationDelay: "-6s" }} />
+        {[
+          { top: "18%", left: "12%", d: "0s" },
+          { top: "34%", left: "78%", d: "-2.5s" },
+          { top: "62%", left: "24%", d: "-4s" },
+          { top: "76%", left: "68%", d: "-1.5s" },
+          { top: "46%", left: "46%", d: "-6s" },
+          { top: "12%", left: "58%", d: "-3.5s" },
+        ].map((dot, i) => (
+          <span key={i} className="lp-dust" style={{ top: dot.top, left: dot.left, animationDelay: dot.d }} />
+        ))}
+
+        {/* Lưới mờ tạo chiều sâu */}
+        <div
+          className="absolute inset-0 opacity-[0.16]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(255,255,255,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.07) 1px, transparent 1px)",
+            backgroundSize: "56px 56px",
+            maskImage: "radial-gradient(circle at 50% 40%, black 0%, transparent 72%)",
+            WebkitMaskImage: "radial-gradient(circle at 50% 40%, black 0%, transparent 72%)",
+          }}
+        />
       </div>
 
       {/* ─── Top nav ─── */}
@@ -901,7 +979,7 @@ export default function LoginPage() {
 
         {/* RIGHT: login card */}
         <div className="flex items-center justify-center animate-scale-in" style={{ animationDelay: "150ms" }}>
-          <div className={`glass rounded-2xl p-6 lg:p-8 w-full max-w-[440px] transition-all duration-500 ${loginSuccess ? "login-success-anim" : ""}`}>
+          <div className={`login-card glass rounded-3xl p-6 lg:p-8 w-full max-w-[460px] transition-all duration-500 ${loginSuccess ? "login-success-anim" : ""}`}>
             {/* Card header */}
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
