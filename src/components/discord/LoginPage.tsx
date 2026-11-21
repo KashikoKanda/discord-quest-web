@@ -1054,23 +1054,7 @@ export default function LoginPage() {
                 <p className="text-[12px] text-white/50 leading-relaxed">Vui lòng quay lại sau ít phút.</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = "/api/auth/discord/start"; }}
-                  className="w-full h-12 rounded-xl flex items-center justify-center gap-2.5 text-[14px] font-semibold text-white bg-[#5865F2] hover:bg-[#4752C4] transition-colors duration-200"
-                >
-                  <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current"><path d={DISCORD_PATH} /></svg>
-                  Đăng nhập với Discord
-                </button>
-                <div className="flex items-center gap-3">
-                  <span className="h-px flex-1 bg-white/10" />
-                  <span className="text-[11px] text-white/35">hoặc dán token</span>
-                  <span className="h-px flex-1 bg-white/10" />
-                </div>
-                {oauthError && (<p className="text-[12px] text-[#F87171] leading-relaxed">{oauthError}</p>)}
-                <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
-              </div>
+<TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
             )}
 
           </div>
