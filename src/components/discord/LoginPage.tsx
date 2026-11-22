@@ -926,6 +926,8 @@ function EmailLogin({ onLoginSuccess, parentLoading }: {
  * ────────────────────────────────────────────────────────────── */
 
 export default function LoginPage() {
+  // Owner yêu cầu: mặc định đăng nhập bằng email + mật khẩu.
+  const [loginMode, setLoginMode] = useState<"email" | "token">("email");
   // UI hiện chỉ mount TokenLogin (Email/QR đã bỏ theo yêu cầu trước đó),
   // nên giữ "token" để khối báo lỗi "Token hết hạn" vẫn hiển thị.
   const [loginSuccess, setLoginSuccess] = useState(false);
@@ -1162,8 +1164,17 @@ export default function LoginPage() {
               <div className="rounded-xl border border-[#F5B544]/25 bg-[#F5B544]/[0.06] p-5 text-center">
                 <Loader2 className="w-5 h-5 text-[#F5B544] animate-spin mx-auto mb-3" />
                 <p className="text-[14px] font-semibold text-[#F5B544] mb-1.5">Hệ thống đang bảo trì</p>
-                <p className="text-[12px] text-white/50 leading-relaxed">Vui lòng quay lại sau ít phút.</p>
+           <>
+              <div className="mb-3 grid grid-cols-2 gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.07]">
+                <button type="button" onClick={() => setLoginMode("email")} className={`h-9 rounded-lg text-[12px] font-medium transition-all duration-200 ${loginMode === "email" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"}`}>Email / Mật khẩu</button>
+                <button type="button" onClick={() => setLoginMode("token")} className={`h-9 rounded-lg text-[12px] font-medium transition-all duration-200 ${loginMode === "token" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"}`}>Token</button>
               </div>
+              {loginMode === "email" ? (
+                <EmailLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} />
+              ) : (
+                <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+              )}
+            </>    </div>
             ) : (
 <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
             )}
