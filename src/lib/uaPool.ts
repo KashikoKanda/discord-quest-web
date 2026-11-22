@@ -329,6 +329,59 @@ function getSessionUACache(): Map<string, CachedUA> {
  *   const loginSessionId = useMemo(() => `ls_${Date.now()}_${Math.random().toString(36).slice(2,8)}`, []);
  * and pass it to every /api/auth/password and /api/auth/mfa call.
  */
+/**
+ * Dựng lại ĐÚNG bộ UA/header từ fingerprint đã lưu của token.
+ *
+ * Trước đây luồng login gọi pickSessionUA() bốc UA ngẫu nhiên, trong khi
+ * /api/auth/check + /api/quests lại dùng fingerprint deterministic của token.
+ * Log 22/11 cho thấy rõ: 02:22:04 fingerprint của token là Electron/35.7.5
+ * Chrome/134 locale de-DE, tới 02:22:31 login "Adopted login identity
+ * Electron/37.6.0" → cùng một token đổi UA giữa 2 request cách nhau 27 giây.
+ * Giờ login dùng lại đúng fingerprint đó nên cả phiên chỉ có một identity.
+ */
+export function sessionUAFromFingerprint(fp: {
+  userAgent: string;
+  chromeVersion: string;
+  osVersion: string;
+  locale: string;
+  timezone: string;
+}): { ua: UABundle; superProps: string; sessionId: string } {
+  const chrome = fp.chromeVersion;
+  const major = chrome.split(".")[0];
+  const electronVersion = fp.userAgent.match(/Electron\/([\d.]+)/)?.[1] || "";
+  const clientVersion =
+    fp.userAgent.match(/discord\/([\d.]+)/)?.[1] || getBuildVersion().clientVersion;
+  const platformVersion = fp.osVersion === "10.0.19045" ? "10.0.0"
+    : fp.osVersion === "10.0.22000" ? "13.0.0"
+    : fp.osVersion === "10.0.22621" ? "14.0.0"
+    : fp.osVersion === "10.0.22631" ? "14.0.0"
+    : "15.0.0";
+  const known = LOCALE_PROFILES.find((x) => x.locale === fp.locale);
+  const lang = fp.locale.split("-")[0];
+
+  const ua: UABundle = {
+    userAgent: fp.userAgent,
+    secChUa: `"Chromium";v="${major}", "Not?A;Brand";v="24"`,
+    secChUaMobile: "?0",
+    secChUaPlatform: '"Windows"',
+    secChUaArch: '"x86"',
+    secChUaBitness: '"64"',
+    secChUaPlatformVersion: `"${platformVersion}"`,
+    secChUaFullVersionList: `"Chromium";v="${chrome}", "Not?A;Brand";v="24.0.0.0"`,
+    secChUaModel: '""',
+    chromeVersion: chrome,
+    osVersion: fp.osVersion,
+    acceptLanguage: known?.acceptLanguage || `${fp.locale},${lang};q=0.9,en;q=0.8`,
+    locale: fp.locale,
+    timezone: fp.timezone,
+    superPropsOsVersion: fp.osVersion,
+    electronVersion,
+    clientVersion,
+  };
+  const { superProps } = buildSuperProperties(ua);
+  return { ua, superProps, sessionId: "" };
+}
+
 export function pickSessionUA(sessionId?: string): { ua: UABundle; superProps: string; sessionId: string } {
   // Stateless mode — no persistence
   if (!sessionId) {

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initBuildVersion, adoptFingerprint } from "@/lib/discord";
+import { initBuildVersion, adoptFingerprint, getOrCreateFingerprint } from "@/lib/discord";
 import { registerSession, generateSessionId } from "@/lib/sessionManager";
 import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure, proxyAuthBlockedFor } from "@/lib/proxyHelper";
-import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
+import { pickSessionUA, buildDiscordHeaders, sessionUAFromFingerprint } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getEphemeralProxy } from "@/lib/proxyFactory";
 import { addTransientProxy } from "@/lib/proxyList";
@@ -55,7 +55,12 @@ export async function POST(request: NextRequest) {
 
     // Một bộ UA duy nhất cho cả phiên login: UA, sec-ch-ua, super-properties và
     // locale/timezone đều lấy từ cùng một bundle nên không mâu thuẫn nhau.
-    const uaSession = pickSessionUA();
+    // Dùng ĐÚNG fingerprint của token (deterministic theo tokenId) thay vì bốc
+    // UA ngẫu nhiên: preview/check, login và worker phải nói cùng một identity.
+    const tokenFingerprint = await getOrCreateFingerprint(tokenId).catch(() => null);
+    const uaSession = tokenFingerprint
+      ? sessionUAFromFingerprint(tokenFingerprint)
+      : pickSessionUA();
     const loginHeaders: Record<string, string> = {
       ...buildDiscordHeaders(uaSession.ua, uaSession.superProps),
       Authorization: cleanToken,
@@ -266,7 +271,9 @@ export async function POST(request: NextRequest) {
     if (!usedProxy && allowDirect) {
       console.log("[Auth Login] Proxy pool rỗng → xác thực token trực tiếp từ IP server");
       try {
-        const sessionUA = pickSessionUA(clientSessionId);
+        const sessionUA = tokenFingerprint
+          ? sessionUAFromFingerprint(tokenFingerprint)
+          : pickSessionUA(clientSessionId);
         const verdict = await checkDiscordToken(cleanToken, {
           headers: {
             "User-Agent": sessionUA.ua.userAgent,
