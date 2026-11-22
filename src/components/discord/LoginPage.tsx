@@ -181,7 +181,13 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       // máy, không qua Render cũng không qua proxy. Server chỉ tạo phiên.
       const local = await verifyTokenLocal(tokenInput.trim());
       if (!local.ok) {
-        setError(local.status === 401 ? "Token không hợp lệ hoặc đã hết hạn" : "Không kết nối được tới Discord, thử lại");
+        setError(
+          local.status === 0
+            ? "Trình duyệt không gọi được Discord (adblock/VPN chặn?). Tắt chặn rồi thử lại."
+            : local.status === 429
+              ? "Discord đang giới hạn tần suất, chờ vài giây rồi thử lại."
+              : "Token không hợp lệ hoặc đã hết hạn",
+        );
         setStatus("");
         setLoading(false);
         return;
@@ -249,13 +255,33 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     let cancelled = false;
     const id = setTimeout(async () => {
       try {
-        const res = await fetch("/api/auth/preview", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }),
-        });
-        const data = await res.json();
+        // Quét NGAY TRONG TRÌNH DUYỆT bằng IP máy người dùng. Trước đây bước này
+        // gọi /api/auth/preview tức server gọi Discord qua proxy: proxy hết dung
+        // lượng nên server lỗi và giao diện báo "Token không hợp lệ" dù token
+        // đang sống — đúng lỗi "token đúng nhưng báo sai".
+        const local = await verifyTokenLocal(t);
         if (cancelled) return;
-        if (data?.success && data.account) setPreview({ ...data.account, country: data.country || null });
-        else setPreviewError(data?.error || "Token không hợp lệ");
+        if (local.ok && local.profile) {
+          setPreview({ ...local.profile, country: null } as never);
+          setPreviewError("");
+          return;
+        }
+        if (local.status === 0) {
+          // Trình duyệt bị chặn kết nối tới Discord → thử đường server.
+          const res = await fetch("/api/auth/preview", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }),
+          }).catch(() => null);
+          const data = res ? await res.json().catch(() => null) : null;
+          if (cancelled) return;
+          if (data?.success && data.account) setPreview({ ...data.account, country: data.country || null });
+          else setPreviewError("Trình duyệt không gọi được Discord (adblock/VPN chặn?). Tắt chặn rồi thử lại.");
+          return;
+        }
+        setPreviewError(
+          local.status === 429
+            ? "Discord đang giới hạn tần suất, chờ vài giây rồi thử lại."
+            : "Token không hợp lệ hoặc đã hết hạn",
+        );
       } catch {
         if (!cancelled) setPreviewError("Không kết nối được máy chủ");
       } finally {

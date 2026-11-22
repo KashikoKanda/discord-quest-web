@@ -10,6 +10,8 @@
  * thẳng /auth/login được (đã kiểm bằng preflight thật).
  */
 
+import { normalizeToken } from "@/lib/tokenCheck";
+
 const API = "https://discord.com/api/v9";
 
 export type LocalProfile = {
@@ -98,10 +100,14 @@ function mapProfile(p: any): LocalProfile {
 }
 
 /** Xác thực token bằng IP mạng thật. */
-export async function verifyTokenLocal(token: string): Promise<{ ok: boolean; status: number; profile?: LocalProfile }> {
+export async function verifyTokenLocal(rawToken: string): Promise<{ ok: boolean; status: number; profile?: LocalProfile }> {
+  // Chuẩn hoá trước khi gửi: token dán từ clipboard rất hay dính nháy, "Bot ",
+  // "Bearer " hoặc xuống dòng — trước đây chỉ trim() nên token ĐÚNG vẫn bị 401
+  // và giao diện báo "Token không hợp lệ".
+  const token = normalizeToken(rawToken);
   try {
     const res = await fetch(`${API}/users/@me`, {
-      headers: baseHeaders({ Authorization: token.trim() }),
+      headers: baseHeaders({ Authorization: token }),
     });
     if (res.status !== 200) return { ok: false, status: res.status };
     const p = await res.json();
