@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { autoPurchaseNitro, getNitroStatus } from "@/lib/nitroManager";
+import { tokenIdOf } from "@/lib/tokenCheck";
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
     }
 
-    const tokenId = clientTokenId || `t_${token.slice(0, 16)}`;
+    const tokenId = clientTokenId || tokenIdOf(token);
 
     const status = getNitroStatus(tokenId);
     if (status.inProgress) {

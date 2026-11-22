@@ -7,6 +7,7 @@ import { buildSuperProperties } from "@/lib/discord";
 import { isGatewayReady, getSuperProperties, getUserAgent } from "@/lib/gateway";
 import https from "node:https";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import { tokenIdOf } from "@/lib/tokenCheck";
 
 const DISCORD_API = "https://discord.com/api/v10";
 
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Thiếu token, questId hoặc countryCode" }, { status: 400 });
     }
 
-    const tokenId = clientTokenId || `t_${token.slice(0, 16)}`;
+    const tokenId = clientTokenId || tokenIdOf(token);
     QuestWorker.registerToken(tokenId, token);
 
     // ─── Block hidden quest enrollment while regular quest is running ───

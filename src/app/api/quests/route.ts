@@ -17,7 +17,7 @@ import {
   isTokenExpiredResponse,
 } from "@/lib/discord";
 import { QuestWorker } from "@/lib/questWorker";
-import { checkDiscordToken } from "@/lib/tokenCheck";
+import { checkDiscordToken, tokenIdOf } from "@/lib/tokenCheck";
 
 function getQuestTypeLabel(type: string): string {
   switch (type) {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
     }
 
-    const tokenId = `t_${token.slice(0, 16)}`;
+    const tokenId = tokenIdOf(token);
     const tokenVerified = isVerified ?? false;
     const tokenAutoClaim = autoClaim ?? true;
     QuestWorker.registerToken(tokenId, token, tokenVerified, tokenAutoClaim);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { QuestWorker } from "@/lib/questWorker";
+import { tokenIdOf } from "@/lib/tokenCheck";
 
 /**
  * POST /api/quests/start
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use tokenId from client (isolated per token) or generate from token hash
-    const tokenId = clientTokenId || `t_${token.slice(0, 16)}`;
+    const tokenId = clientTokenId || tokenIdOf(token);
     QuestWorker.registerToken(tokenId, token, true, autoClaim ?? true, multiQuest !== false);
 
     // Truyền multiQuest vào QuestWorker để quyết định chế độ

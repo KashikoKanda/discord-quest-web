@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { QuestWorker } from "@/lib/questWorker";
+import { tokenIdOf } from "@/lib/tokenCheck";
 
 /**
  * POST /api/quests/claim
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token and questId required" }, { status: 400 });
     }
 
-    const tokenId = clientTokenId || `t_${token.slice(0, 16)}`;
+    const tokenId = clientTokenId || tokenIdOf(token);
     QuestWorker.registerToken(tokenId, token);
 
     const result = await QuestWorker.claimReward(tokenId, questId, questData);

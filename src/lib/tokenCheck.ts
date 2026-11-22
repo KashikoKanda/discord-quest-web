@@ -32,6 +32,16 @@ export function normalizeToken(raw: string): string {
   return token;
 }
 
+/**
+ * tokenId dùng để ghim proxy + fingerprint. PHẢI đi qua normalizeToken trước:
+ * nếu người dùng dán kèm dấu nháy, tokenId thành `t_"MTM5...` → ghim một proxy
+ * khác với tokenId chuẩn → cùng một token đi hai IP. Log 22/11 02:26:51 có
+ * đúng tokenId `t_"MTM5NzU5N` rồi 401 ngay sau đó.
+ */
+export function tokenIdOf(raw: string): string {
+  return `t_${normalizeToken(raw).slice(0, 16)}`;
+}
+
 /** Token user/MFA luôn bắt đầu bằng "mfa.". */
 export function looksLikeMfaUserToken(token: string): boolean {
   return token.startsWith("mfa.");
