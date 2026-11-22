@@ -3,6 +3,7 @@
 // Đổi thành false để bật lại.
 const QUESTS_PAUSED = false;
 
+import { startLocalEngine, isLocalEngineRunning, stopLocalEngine } from "@/lib/localQuestEngine";
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL } from "@/lib/guildConfig";
 import { Button } from "@/components/ui/button";
@@ -260,14 +261,21 @@ export default function Dashboard() {
     }
     try {
       if (QUESTS_PAUSED) { addLog({ level: "warn", message: "Tạm đóng xử lý quest, sẽ bật lại sau." } as never); return; }
-      // Phản hồi ngay trên giao diện, không để nút im lặng trong lúc chờ server.
+      if (isLocalEngineRunning()) {
+        addLog({ level: "warn", message: "Quest đang chạy trên máy bạn rồi", timestamp: Date.now() });
+        return;
+      }
+      // Xử lý quest chạy NGAY TRONG TRÌNH DUYỆT: request đi từ IP mạng thật của
+      // thiết bị nên không tốn dung lượng proxy. Proxy chỉ dùng cho login và
+      // enroll quest ẩn (server lo), đúng như owner chốt.
       setWorkerStatus("running");
-      addLog({ level: "info", message: "Đang gửi yêu cầu bắt đầu…", timestamp: Date.now() });
-      const res = await fetch("/api/quests/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, tokenId, isVerified, multiQuest: multiQuestEnabled }) });
-      const data = await res.json();
-      if (checkTokenExpired(res, data)) return;
-      if (data.success) { setWorkerStatus("running"); addLog({ level: "success", message: "Đã bắt đầu xử lý quest", timestamp: Date.now() }); }
-      else { setWorkerStatus("idle"); addLog({ level: "error", message: data.message || "Không thể bắt đầu", timestamp: Date.now() }); }
+      addLog({ level: "info", message: "Chạy quest từ IP mạng thật của máy bạn (không qua proxy)", timestamp: Date.now() });
+      await startLocalEngine(token, {
+        log: (level, message) => addLog({ level, message, timestamp: Date.now() }),
+        progress: (questId, progress, status) => updateQuestProgress(questId, progress, status as never),
+      }, { concurrency: multiQuestEnabled ? 3 : 1 });
+      setWorkerStatus("idle");
+      void refreshQuests();
     } catch (err: unknown) { setWorkerStatus("idle"); addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }
   };
 
@@ -433,6 +441,12 @@ export default function Dashboard() {
                   <div className="relative flex-1 min-w-0">
                     <p className="text-display text-lg sm:text-xl text-[#F5B544] truncate">Đang làm {running} Quest</p>
                   </div>
+                  <button
+                    onClick={() => { stopLocalEngine(); setWorkerStatus("idle"); addLog({ level: "warn", message: "Đã dừng chạy quest trên máy bạn", timestamp: Date.now() }); }}
+                    className="relative shrink-0 h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 text-[12px] text-white/80 transition-colors"
+                  >
+                    Dừng
+                  </button>
                   <div className="relative hidden sm:flex flex-col items-end gap-1 shrink-0">
                     <span className="dot dot-warning dot-pulse" />
                     <span className="text-[10px] font-mono text-white/50">LIVE</span>
