@@ -192,6 +192,20 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         return;
       }
       if (!res.ok || !data.success) {
+        // Server hết proxy/bảo trì trong khi trình duyệt đã xác thực token sống
+        // bằng chính IP của người dùng → vẫn cho vào, không báo sai token.
+        if (preview && (data.maintenance || res.status === 503 || res.status >= 500)) {
+          setStatus("connected");
+          onLoginSuccess(tokenInput.trim(), {
+            id: preview.id,
+            username: preview.username,
+            global_name: preview.global_name,
+            discriminator: preview.discriminator,
+            avatar: preview.avatar,
+            locale: preview.locale,
+          });
+          return;
+        }
         setError(
           data.maintenance
             ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút."
@@ -232,6 +246,44 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     setPreviewing(true);
     let cancelled = false;
     const id = setTimeout(async () => {
+      // Quét NGAY TRONG TRÌNH DUYỆT trước. Request đi từ IP thật của máy người
+      // dùng nên kết quả phản ánh đúng token: trước đây quét qua server, server
+      // hết dung lượng proxy nên trả lỗi và giao diện báo "token không hợp lệ"
+      // dù token còn sống.
+      try {
+        const direct = await fetch("https://discord.com/api/v9/users/@me", {
+          headers: { Authorization: t, "X-Discord-Locale": "en-US" },
+        });
+        if (cancelled) return;
+        if (direct.ok) {
+          const p = await direct.json();
+          setPreview({
+            id: String(p.id),
+            username: p.username,
+            global_name: p.global_name || null,
+            discriminator: p.discriminator || "0",
+            avatar: p.avatar || null,
+            locale: p.locale || null,
+            verified: !!p.verified,
+            country: null,
+          });
+          setPreviewing(false);
+          fetch("https://ipwho.is/")
+            .then((r) => r.json())
+            .then((g) => {
+              if (!cancelled && g?.country_code) setPreview((prev) => (prev ? { ...prev, country: String(g.country_code).toUpperCase() } : prev));
+            })
+            .catch(() => { /* không quan trọng */ });
+          return;
+        }
+        if (direct.status === 401) {
+          setPreviewError("Token không hợp lệ hoặc đã bị thu hồi");
+          setPreviewing(false);
+          return;
+        }
+      } catch {
+        // Trình duyệt chặn/CORS → thử đường server bên dưới
+      }
       try {
         const res = await fetch("/api/auth/preview", {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }),
