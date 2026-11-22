@@ -1,4 +1,5 @@
 // Discord Gateway WebSocket client for quest auto-completion
+import { isWebIdentity, webSuperProps, userIdFromToken, webUserAgent } from "./webIdentity";
 // Connects to Discord Gateway with proper Identify payload
 // so that heartbeat/video-progress REST APIs work (they require active gateway session)
 //
@@ -109,6 +110,7 @@ function getOrCreateState(tokenId: string): GatewayState {
  * MUST match the Identify payload properties
  */
 export function getSuperProperties(tokenId: string): string {
+  if (isWebIdentity()) return webSuperProps(null, tokenId);
   const state = gatewayStates.get(tokenId);
   const fp = state?.fingerprint || createFingerprint();
 
@@ -235,7 +237,8 @@ export async function connectGateway(
       const url = state.resumeUrl || GATEWAY_URL;
       const ws = new WebSocket(url, {
         headers: {
-          "User-Agent": state.fingerprint.user_agent,
+          // UA bắt tay WebSocket phải cùng loại client với REST/Identify.
+          "User-Agent": isWebIdentity() ? webUserAgent(null, tokenId) : state.fingerprint.user_agent,
         },
         ...(wsAgent ? { agent: wsAgent } : {}),
       } as never);
@@ -396,6 +399,47 @@ function sendHeartbeat(tokenId: string, state: GatewayState) {
  * Send Identify payload with full desktop client properties
  * This is the CRITICAL part - the properties must match x-super-properties in REST calls
  */
+
+/**
+ * Identify PHẢI khai đúng identity mà REST đang khai. Trước đây Identify gửi
+ * field desktop (browser "Discord Client", client_version 1.0.x) trong khi REST
+ * gửi web Chrome 157 → cùng token nói hai client, Discord đóng 4003/4004 rồi
+ * thu hồi. Khi IDENTITY_MODE=web thì dùng nguyên bộ super-properties của web
+ * (đã gồm os, browser, browser_version, os_version, system_locale,
+ * client_build_number, client_launch_id, và client_heartbeat_session_id cho
+ * profile Android).
+ */
+function buildIdentifyProperties(tokenId: string, token: string, fp: FingerprintData): Record<string, unknown> {
+  if (isWebIdentity()) {
+    try {
+      const b64 = webSuperProps(userIdFromToken(token), tokenId);
+      const parsed = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+      if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+    } catch {}
+  }
+  return {
+    os: "Windows",
+    browser: "Discord Client",
+    release_channel: "stable",
+    client_version: fp.client_version,
+    os_version: fp.os_version,
+    os_arch: "x64",
+    app_arch: "x64",
+    system_locale: fp.system_locale,
+    has_client_mods: false,
+    client_launch_id: fp.client_launch_id,
+    browser_user_agent: fp.user_agent,
+    browser_version: fp.browser_version,
+    os_sdk_version: fp.os_version.split(".").pop() || "19045",
+    client_build_number: fp.client_build_number,
+    native_build_number: fp.native_build_number,
+    client_event_source: null,
+    launch_signature: fp.launch_signature,
+    client_heartbeat_session_id: fp.client_heartbeat_session_id,
+    client_app_state: "focused",
+  };
+}
+
 function sendIdentify(tokenId: string, token: string, state: GatewayState) {
   if (state.ws?.readyState !== WebSocket.OPEN) return;
 
@@ -405,29 +449,7 @@ function sendIdentify(tokenId: string, token: string, state: GatewayState) {
     op: 2, // Identify
     d: {
       token: token,
-      properties: {
-        os: "Windows",
-        browser: "Discord Client",
-        release_channel: "stable",
-        client_version: fp.client_version,
-        os_version: fp.os_version,
-        os_arch: "x64",
-        app_arch: "x64",
-        system_locale: fp.system_locale,
-        has_client_mods: false,
-        client_launch_id: fp.client_launch_id,
-        browser_user_agent: fp.user_agent,
-        browser_version: fp.browser_version,
-        os_sdk_version: fp.os_version.split(".").pop() || "19045",
-        client_build_number: fp.client_build_number,
-        native_build_number: fp.native_build_number,
-        client_event_source: null,
-        launch_signature: fp.launch_signature,
-        client_heartbeat_session_id: fp.client_heartbeat_session_id,
-        client_app_state: "focused",
-        is_fast_connect: false,
-        gateway_connect_reasons: "AppSkeleton",
-      },
+      properties: buildIdentifyProperties(tokenId, token, fp),
       capabilities: 0,
       presence: { status: "online", since: null, activities: [], afk: false },
       compress: false,
