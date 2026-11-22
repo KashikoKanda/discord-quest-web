@@ -1007,46 +1007,75 @@ export default function HiddenQuests() {
   useEffect(() => {
     if (!token) return;
     setGuildCheckLoading(true);
-    // Kiểm tra NGAY TRONG TRÌNH DUYỆT bằng IP mạng thật của máy.
-    // Trước đây bước này gọi /api/auth/guild-check, tức server gọi Discord qua
-    // proxy: ví proxy 0 GB nên request hỏng, cửa quest ẩn bị khoá và hiện
-    // "chưa vào server" dù tài khoản đang ở trong server (kể cả Admin).
+    // Kiểm tra membership NGAY TRONG TRÌNH DUYỆT bằng IP thật của máy.
+    // Dùng /users/@me/guilds: một request duy nhất, trả luôn id + tên + icon,
+    // nên vừa chính xác hơn /guilds/<id> (endpoint đó trả 403 cả khi chỉ thiếu
+    // quyền, gây chặn oan) vừa hết nháy vì không phải chờ 2 bước.
     (async () => {
+      let decided = false;
       try {
-        const r = await fetch(
-          `https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`,
-          { headers: { Authorization: token, "X-Discord-Locale": "vi" } },
-        );
-        if (r.status === 200) {
-          const g = await r.json().catch(() => null);
-          const icon = g?.icon
-            ? `https://cdn.discordapp.com/icons/${REQUIRED_GUILD_ID}/${g.icon}.png?size=128`
-            : null;
-          setGuildMember(true, g?.name || null, icon);
-          return;
-        }
-        if (r.status === 403 || r.status === 404) {
-          setGuildMember(false, null, null);
-          return;
-        }
-      } catch {
-        /* trình duyệt bị chặn → thử đường server */
-      }
-      try {
-        const res = await fetch("/api/auth/guild-check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+        const r = await fetch("https://discord.com/api/v9/users/@me/guilds", {
+          headers: { Authorization: token },
+          cache: "no-store",
         });
-        const data = res.ok ? await res.json() : null;
-        if (data && data.isMember !== undefined) {
-          setGuildMember(data.isMember, data.guildName, data.guildIcon);
+        if (r.ok) {
+          const list = await r.json().catch(() => null);
+          if (Array.isArray(list)) {
+            const hit = list.find((g: { id?: string }) => g?.id === REQUIRED_GUILD_ID) as
+              | { id: string; name?: string; icon?: string | null }
+              | undefined;
+            if (hit) {
+              const icon = hit.icon
+                ? `https://cdn.discordapp.com/icons/${REQUIRED_GUILD_ID}/${hit.icon}.png?size=128`
+                : null;
+              setGuildMember(true, hit.name || null, icon);
+            } else {
+              setGuildMember(false, null, null);
+            }
+            decided = true;
+          }
         }
       } catch {
-        /* silent */
-      } finally {
-        setGuildCheckLoading(false);
+        /* trình duyệt bị chặn → thử các đường sau */
       }
+      if (!decided) {
+        try {
+          const g = await fetch(
+            `https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`,
+            { headers: { Authorization: token }, cache: "no-store" },
+          );
+          if (g.status === 200) {
+            const info = await g.json().catch(() => null);
+            const icon = info?.icon
+              ? `https://cdn.discordapp.com/icons/${REQUIRED_GUILD_ID}/${info.icon}.png?size=128`
+              : null;
+            setGuildMember(true, info?.name || null, icon);
+            decided = true;
+          } else if (g.status === 403 || g.status === 404) {
+            setGuildMember(false, null, null);
+            decided = true;
+          }
+        } catch {
+          /* im lặng */
+        }
+      }
+      if (!decided) {
+        try {
+          const res = await fetch("/api/auth/guild-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+          const data = res.ok ? await res.json() : null;
+          if (data && data.isMember !== undefined) {
+            setGuildMember(data.isMember, data.guildName, data.guildIcon);
+          }
+        } catch {
+          /* im lặng */
+        }
+      }
+      // Không xác định được thì GIỮ NGUYÊN trạng thái cũ, tránh nháy khoá oan.
+      setGuildCheckLoading(false);
     })();
   }, [token, setGuildMember, setGuildCheckLoading]);
 
