@@ -21,10 +21,66 @@ const ACCEPT_LANGUAGE =
   process.env.WEB_ACCEPT_LANGUAGE ||
   "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5";
 
-const X_FINGERPRINT =
+/** Cặp id của phiên Chrome mà owner chụp được — chỉ dùng cho ĐÚNG account đó. */
+const CAPTURE_USER_ID = process.env.WEB_CAPTURE_USER_ID || "732227829143699506";
+const CAPTURE_FINGERPRINT =
   process.env.WEB_X_FINGERPRINT || "1573892907528753284.aNo04N2R01LnPE41YF8uL2HujJM";
-const X_INSTALLATION_ID =
+const CAPTURE_INSTALLATION_ID =
   process.env.WEB_X_INSTALLATION_ID || "1545377557191458879.68Aw7SaRzmhgY6rvbJL_-sjKbi0";
+
+/** Lấy user id từ chính token (segment 1 là base64 của snowflake). */
+export function userIdFromToken(token: string): string | null {
+  const seg = (token || "").replace(/^mfa\./i, "").split(".")[0];
+  if (!seg) return null;
+  try {
+    const id = Buffer.from(seg, "base64").toString("utf8").replace(/[^0-9]/g, "");
+    return id.length >= 15 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+const B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+function seeded(seed: number) {
+  let st = seed >>> 0 || 1;
+  return () => {
+    st ^= st << 13; st >>>= 0;
+    st ^= st >>> 17;
+    st ^= st << 5; st >>>= 0;
+    return st / 4294967296;
+  };
+}
+
+/**
+ * Mỗi ACCOUNT một thiết bị riêng: x-installation-id và x-fingerprint sinh
+ * deterministic từ user id, nên cùng account luôn ra cùng cặp id (kể cả sau
+ * deploy), còn hai account khác nhau thì không bao giờ trùng thiết bị.
+ * Riêng account đã chụp capture thì trả đúng cặp id thật của owner.
+ */
+export function idsForUser(userId: string | null): { fingerprint: string; installationId: string } {
+  if (userId && userId === CAPTURE_USER_ID) {
+    return { fingerprint: CAPTURE_FINGERPRINT, installationId: CAPTURE_INSTALLATION_ID };
+  }
+  const key = userId || "anonymous";
+  let seed = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    seed ^= key.charCodeAt(i);
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  const rand = seeded(seed);
+  const snowflake = () =>
+    String(Math.floor(1.0e18 + rand() * 8.9e17)).slice(0, 19);
+  const randPart = () => {
+    let out = "";
+    for (let i = 0; i < 22; i++) out += B64URL[Math.floor(rand() * 64)];
+    return out;
+  };
+  return {
+    fingerprint: `${snowflake()}.${randPart()}`,
+    installationId: `${snowflake()}.${randPart()}`,
+  };
+}
 
 /** Mặc định dùng identity web; đặt IDENTITY_MODE=electron để quay lại UA Electron. */
 export function isWebIdentity(): boolean {
@@ -71,15 +127,16 @@ export function webChromeVersion(): string {
 }
 
 /** Toàn bộ header mang tính identity, khớp 1:1 với capture của owner. */
-export function webHeaders(): Record<string, string> {
+export function webHeaders(userId?: string | null): Record<string, string> {
+  const ids = idsForUser(userId ?? null);
   return {
     "User-Agent": UA,
     "Accept-Language": ACCEPT_LANGUAGE,
     "x-super-properties": webSuperProps(),
     "x-discord-locale": LOCALE,
     "x-discord-timezone": TIMEZONE,
-    "x-fingerprint": X_FINGERPRINT,
-    "x-installation-id": X_INSTALLATION_ID,
+    "x-fingerprint": ids.fingerprint,
+    "x-installation-id": ids.installationId,
     "x-debug-options": "bugReporterEnabled",
     "sec-ch-ua": `"Not-A.Brand";v="99", "Google Chrome";v="${CHROME.split(".")[0]}", "Chromium";v="${CHROME.split(".")[0]}"`,
     "sec-ch-ua-mobile": "?0",

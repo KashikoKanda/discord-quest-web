@@ -10,7 +10,7 @@
 // RANDOM UA: Each token gets a unique Chrome version + OS variation
 
 import { randomUUID } from "crypto";
-import { isWebIdentity, webHeaders } from "./webIdentity";
+import { isWebIdentity, webHeaders, userIdFromToken } from "./webIdentity";
 import { db } from "./db";
 
 const DISCORD_API = "https://discord.com/api/v10";
@@ -553,7 +553,7 @@ export async function discordFetch(
   // Identity WEB: ghi đè lên bộ Electron giả bằng đúng header của phiên Chrome
   // thật (UA Chrome 157, x-fingerprint, x-installation-id, super-properties).
   if (isWebIdentity()) {
-    Object.assign(headers, webHeaders());
+    Object.assign(headers, webHeaders(userIdFromToken(token)));
     headers.Authorization = token.replace(/^Bot\s+/i, "");
     headers["Content-Type"] = "application/json";
   }
