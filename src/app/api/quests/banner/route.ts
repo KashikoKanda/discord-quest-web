@@ -1,151 +1,181 @@
 import { NextRequest, NextResponse } from "next/server";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 import { createHash } from "crypto";
 
-const CACHE_DIR = join(process.cwd(), "db", "banners");
-const MAX_AGE = 604800; // 7 days cache (was 24h)
-const STALE_AFTER = 14 * 24 * 60 * 60 * 1000; // 14 days — files older than this get deleted
-const CLEANUP_INTERVAL = 6 * 60 * 60 * 1000; // Run cleanup every 6 hours
+/**
+ * Banner quest: cache 3 tầng, dùng chung cho MỌI token.
+ *
+ * Key chỉ là questId + hero asset, không có token, nên 20 account cùng một
+ * quest chỉ tải ảnh từ Discord CDN đúng MỘT lần. Trước đây chỉ có cache đĩa
+ * trong process.cwd()/db — thư mục đó bị xoá mỗi lần deploy và có thể không
+ * ghi được, thành ra mỗi lần mở dashboard là mỗi banner MISS, ảnh nhấp nháy
+ * load lại.
+ *
+ * Thứ tự phục vụ: RAM (Map) → đĩa (/tmp) → Discord CDN.
+ * Request trùng nhau đang bay thì dùng chung một promise, không gọi CDN 2 lần.
+ */
 
-// Ensure cache dir exists
-if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true });
+const CACHE_DIR = process.env.BANNER_CACHE_DIR || join(tmpdir(), "dqa-banners");
+const MAX_AGE = 604800; // 7 ngày cho browser
+const S_MAX_AGE = 2592000; // 30 ngày cho CDN/proxy
+const STALE_AFTER = 14 * 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL = 6 * 60 * 60 * 1000;
 
-// Track last cleanup time
+const MAX_MEM_ENTRIES = 400;
+const MAX_MEM_BYTES = 96 * 1024 * 1024; // 96 MB
+
+type Entry = { buf: Buffer; etag: string; at: number };
+const mem = new Map<string, Entry>();
+const inflight = new Map<string, Promise<{ buf: Buffer; etag: string; from: "CDN" | "DISK" }>>();
+let memBytes = 0;
+
+try {
+  if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true });
+} catch {
+  /* thư mục không ghi được thì chỉ dùng RAM */
+}
+
 let lastCleanup = 0;
 
-function safeFilename(questId: string, heroAsset: string): string {
-  const safe = `${questId}_${heroAsset}`.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return safe + ".webp";
+function keyOf(questId: string, heroAsset: string): string {
+  return `${questId}_${heroAsset}`;
 }
 
-/**
- * Generate ETag from file stats (size + mtime) for 304 responses
- */
-function generateETag(size: number, mtimeMs: number): string {
-  return createHash("md5").update(`${size}-${mtimeMs}`).digest("hex").slice(0, 16);
+function safeFilename(key: string): string {
+  return key.replace(/[^a-zA-Z0-9_-]/g, "_") + ".webp";
 }
 
-/**
- * Cleanup stale banner files older than STALE_AFTER
- * Runs at most every CLEANUP_INTERVAL
- */
+function etagOf(buf: Buffer): string {
+  return createHash("md5").update(buf).digest("hex").slice(0, 20);
+}
+
+function memGet(key: string): Entry | undefined {
+  const hit = mem.get(key);
+  if (!hit) return undefined;
+  // refresh LRU order
+  mem.delete(key);
+  mem.set(key, hit);
+  return hit;
+}
+
+function memPut(key: string, entry: Entry) {
+  const prev = mem.get(key);
+  if (prev) memBytes -= prev.buf.length;
+  mem.set(key, entry);
+  memBytes += entry.buf.length;
+  while (mem.size > MAX_MEM_ENTRIES || memBytes > MAX_MEM_BYTES) {
+    const oldest = mem.keys().next().value as string | undefined;
+    if (!oldest) break;
+    const gone = mem.get(oldest);
+    if (gone) memBytes -= gone.buf.length;
+    mem.delete(oldest);
+  }
+}
+
 function cleanupStaleBanners() {
   const now = Date.now();
   if (now - lastCleanup < CLEANUP_INTERVAL) return;
   lastCleanup = now;
-
   try {
-    const files = readdirSync(CACHE_DIR);
     let deleted = 0;
-    for (const file of files) {
-      const filePath = join(CACHE_DIR, file);
+    for (const file of readdirSync(CACHE_DIR)) {
+      const p = join(CACHE_DIR, file);
       try {
-        const stats = statSync(filePath);
-        if (now - stats.mtimeMs > STALE_AFTER) {
-          unlinkSync(filePath);
+        if (now - statSync(p).mtimeMs > STALE_AFTER) {
+          unlinkSync(p);
           deleted++;
         }
-      } catch {
-        // Skip files that can't be stat'd
+      } catch {}
+    }
+    if (deleted > 0) console.log(`[BannerCache] Dọn ${deleted} banner cũ (>14 ngày)`);
+  } catch {}
+}
+
+function headers(etag: string, cache: string): Record<string, string> {
+  return {
+    "Content-Type": "image/webp",
+    "Cache-Control": `public, max-age=${MAX_AGE}, s-maxage=${S_MAX_AGE}, immutable, stale-while-revalidate=86400`,
+    "ETag": etag,
+    "X-Cache": cache,
+  };
+}
+
+async function loadFromCdn(
+  key: string,
+  cdnUrl: string,
+): Promise<{ buf: Buffer; etag: string; from: "CDN" | "DISK" }> {
+  const running = inflight.get(key);
+  if (running) return running;
+
+  const job = (async () => {
+    const cacheFile = join(CACHE_DIR, safeFilename(key));
+
+    // tầng đĩa
+    try {
+      if (existsSync(cacheFile)) {
+        const buf = readFileSync(cacheFile);
+        if (buf.length > 0) return { buf, etag: etagOf(buf), from: "DISK" as const };
       }
+    } catch {}
+
+    const res = await fetch(cdnUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      cache: "force-cache",
+    });
+    if (!res.ok) {
+      if (res.status === 404) {
+        try { if (existsSync(cacheFile)) unlinkSync(cacheFile); } catch {}
+      }
+      throw Object.assign(new Error(`cdn ${res.status}`), { status: res.status });
     }
-    if (deleted > 0) {
-      console.log(`[BannerCache] Cleaned up ${deleted} stale banner files (older than 14 days)`);
-    }
-  } catch (err) {
-    console.error("[BannerCache] Cleanup error:", err instanceof Error ? err.message : String(err));
+    const buf = Buffer.from(await res.arrayBuffer());
+    try { writeFileSync(cacheFile, buf); } catch {}
+    return { buf, etag: etagOf(buf), from: "CDN" as const };
+  })();
+
+  inflight.set(key, job);
+  try {
+    return await job;
+  } finally {
+    inflight.delete(key);
   }
 }
 
 export async function GET(req: NextRequest) {
-  const url = req.nextUrl;
-  const questId = url.searchParams.get("questId");
-  const heroAsset = url.searchParams.get("hero");
+  const questId = req.nextUrl.searchParams.get("questId");
+  const heroAsset = req.nextUrl.searchParams.get("hero");
+  if (!questId || !heroAsset) return new NextResponse("Missing params", { status: 400 });
 
-  if (!questId || !heroAsset) {
-    return new NextResponse("Missing params", { status: 400 });
-  }
-
-  // Run cleanup (no-op if recently cleaned)
   cleanupStaleBanners();
 
-  // Build Discord CDN URL
-  let cdnUrl: string;
-  if (heroAsset.includes("/")) {
-    cdnUrl = `https://cdn.discordapp.com/${heroAsset}`;
-  } else {
-    cdnUrl = `https://cdn.discordapp.com/quests/${questId}/assets/${heroAsset}.webp`;
-  }
+  const key = keyOf(questId, heroAsset);
+  const cdnUrl = heroAsset.includes("/")
+    ? `https://cdn.discordapp.com/${heroAsset}`
+    : `https://cdn.discordapp.com/quests/${questId}/assets/${heroAsset}.webp`;
 
-  // Check disk cache
-  const cacheFile = join(CACHE_DIR, safeFilename(questId, heroAsset));
-  if (existsSync(cacheFile)) {
-    const data = readFileSync(cacheFile);
-    const stats = statSync(cacheFile);
-    const etag = generateETag(stats.size, stats.mtimeMs);
+  const ifNoneMatch = req.headers.get("if-none-match");
 
-    // Check If-None-Match → return 304 (browser uses cached version, no data transfer)
-    const ifNoneMatch = req.headers.get("if-none-match");
-    if (ifNoneMatch && ifNoneMatch === etag) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: {
-          "ETag": etag,
-          "Cache-Control": `public, max-age=${MAX_AGE}, immutable`,
-          "X-Cache": "HIT-304",
-        },
-      });
+  // tầng RAM
+  const hit = memGet(key);
+  if (hit) {
+    if (ifNoneMatch && ifNoneMatch.replace(/^W\//, "") === hit.etag) {
+      return new NextResponse(null, { status: 304, headers: headers(hit.etag, "RAM-304") });
     }
-
-    return new NextResponse(data, {
-      headers: {
-        "Content-Type": "image/webp",
-        "Cache-Control": `public, max-age=${MAX_AGE}, immutable`,
-        "ETag": etag,
-        "X-Cache": "HIT",
-      },
-    });
+    return new NextResponse(hit.buf as unknown as BodyInit, { headers: headers(hit.etag, "RAM") });
   }
 
-  // Fetch from Discord CDN
   try {
-    const res = await fetch(cdnUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
-
-    if (!res.ok) {
-      // If 404 → quest/banner no longer exists → clean up any stale cache for it
-      if (res.status === 404) {
-        try {
-          if (existsSync(cacheFile)) unlinkSync(cacheFile);
-        } catch {}
-      }
-      return new NextResponse("Fetch failed", { status: res.status });
+    const { buf, etag, from } = await loadFromCdn(key, cdnUrl);
+    memPut(key, { buf, etag, at: Date.now() });
+    if (ifNoneMatch && ifNoneMatch.replace(/^W\//, "") === etag) {
+      return new NextResponse(null, { status: 304, headers: headers(etag, `${from}-304`) });
     }
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    // Save to disk cache (non-blocking)
-    try {
-      writeFileSync(cacheFile, buffer);
-    } catch {
-      // Cache write failure is non-critical
-    }
-
-    const etag = generateETag(buffer.length, Date.now());
-
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type": "image/webp",
-        "Cache-Control": `public, max-age=${MAX_AGE}, immutable`,
-        "ETag": etag,
-        "X-Cache": "MISS",
-      },
-    });
-  } catch {
+    return new NextResponse(buf as unknown as BodyInit, { headers: headers(etag, from) });
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status === 404) return new NextResponse("Not found", { status: 404 });
     return new NextResponse("Fetch error", { status: 502 });
   }
 }
