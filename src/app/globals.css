@@ -1708,3 +1708,113 @@ html, body {
   height: 0 !important;
   display: none !important;
 }
+
+/* ─── Global polish layer (22/11/2026) ─────────────────────────────
+   Mục tiêu: dịu mắt hơn (bớt chói), chuyển động mượt và đồng bộ toàn app. */
+:root {
+  --dqa-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dqa-ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --dqa-hair: rgba(255, 255, 255, 0.06);
+  --dqa-hair-hi: rgba(255, 255, 255, 0.10);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color-scheme: dark;
+}
+body {
+  letter-spacing: -0.008em;
+}
+.text-display {
+  letter-spacing: -0.022em;
+}
+
+/* Nền aurora dịu lại, không gắt */
+.aurora-blob-1,
+.aurora-blob-2 {
+  opacity: 0.55;
+  filter: saturate(1.02);
+}
+
+/* Kính: viền mảnh, bóng mềm, nhấc nhẹ khi hover */
+.glass {
+  background-color: rgba(18, 19, 26, 0.62);
+  border: 1px solid var(--dqa-hair);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.045) inset,
+    0 18px 48px -30px rgba(0, 0, 0, 0.8);
+  transition:
+    transform 0.5s var(--dqa-ease),
+    box-shadow 0.5s var(--dqa-ease),
+    border-color 0.35s var(--dqa-ease-soft),
+    background-color 0.35s var(--dqa-ease-soft);
+}
+.glass:hover {
+  transform: translateY(-1px);
+  border-color: var(--dqa-hair-hi);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 24px 60px -34px rgba(0, 0, 0, 0.85);
+}
+
+/* Chuyển động chung: mượt, không giật */
+button,
+a,
+input,
+textarea,
+select,
+[role="button"],
+[role="tab"] {
+  transition:
+    background-color 0.25s var(--dqa-ease-soft),
+    color 0.25s var(--dqa-ease-soft),
+    border-color 0.25s var(--dqa-ease-soft),
+    box-shadow 0.35s var(--dqa-ease),
+    transform 0.25s var(--dqa-ease),
+    opacity 0.25s var(--dqa-ease-soft);
+}
+button:active,
+[role="button"]:active {
+  transform: scale(0.985);
+}
+:focus-visible {
+  outline: 2px solid rgba(124, 138, 255, 0.5);
+  outline-offset: 2px;
+}
+
+/* Vào trang: nhích lên rất nhẹ, không phô */
+@keyframes dqa-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+main,
+[data-dqa-page] {
+  animation: dqa-rise 0.5s var(--dqa-ease) both;
+}
+
+/* Danh sách dài: xuất hiện so le nhẹ */
+@keyframes dqa-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.dqa-fade { animation: dqa-fade 0.4s var(--dqa-ease-soft) both; }
+
+/* Viền sáng mảnh cho khối được chọn, thay vì đổ bóng chói */
+.dqa-selected {
+  border-color: rgba(124, 138, 255, 0.42) !important;
+  box-shadow: 0 0 0 1px rgba(124, 138, 255, 0.18), 0 12px 36px -24px rgba(88, 101, 242, 0.5);
+}
+
+/* Tôn trọng giảm chuyển động */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
