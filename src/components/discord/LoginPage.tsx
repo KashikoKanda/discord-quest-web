@@ -160,7 +160,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");  // "connecting" | "connected" | ""
   const [pasted, setPasted] = useState(false);
-  const [preview, setPreview] = useState<null | { id: string; username: string; global_name: string | null; discriminator: string; avatar: string | null; locale: string | null; verified: boolean; country: string | null }>(null);
+  const [preview, setPreview] = useState<null | { id: string; username: string; global_name: string | null; discriminator: string; avatar: string | null; locale: string | null; verified: boolean; country: string | null; store_country?: string | null; email?: string | null; phone?: string | null; mfa_enabled?: boolean; flags?: number; premium_type?: number }>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [platform, setPlatform] = useState<"pc" | "android">("pc");
@@ -195,6 +195,12 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
                 avatar: preview.avatar,
                 locale: preview.locale,
                 verified: preview.verified,
+                email: preview.email,
+                phone: preview.phone,
+                mfa_enabled: preview.mfa_enabled,
+                flags: preview.flags,
+                premium_type: preview.premium_type,
+                store_country: preview.store_country,
               }
             : undefined,
         }),
@@ -224,6 +230,12 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
             avatar: preview.avatar,
             locale: preview.locale,
             verified: preview.verified,
+            email: preview.email,
+            phone: preview.phone,
+            mfa_enabled: preview.mfa_enabled,
+            flags: preview.flags,
+            premium_type: preview.premium_type,
+            store_country: preview.store_country,
           } as any);
           return;
         }
@@ -287,12 +299,19 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
             locale: p.locale || null,
             verified: !!p.verified,
             country: null,
+            // Giữ đủ hồ sơ ngay từ bước quét: trước đây chỉ lấy vài field nên
+            // trang Thông tin tài khoản hiện thiếu Email và Quốc gia.
+            email: p.email ?? null,
+            phone: p.phone ?? null,
+            mfa_enabled: !!p.mfa_enabled,
+            flags: p.public_flags || 0,
+            premium_type: p.premium_type || 0,
           });
           setPreviewing(false);
           fetch("https://ipwho.is/")
             .then((r) => r.json())
             .then((g) => {
-              if (!cancelled && g?.country_code) setPreview((prev) => (prev ? { ...prev, country: String(g.country_code).toUpperCase() } : prev));
+              if (!cancelled && g?.country_code) setPreview((prev) => (prev ? { ...prev, country: String(g.country_code).toUpperCase(), store_country: String(g.country_code).toUpperCase() } : prev));
             })
             .catch(() => { /* không quan trọng */ });
           return;

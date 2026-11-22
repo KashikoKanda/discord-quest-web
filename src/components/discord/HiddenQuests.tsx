@@ -1,7 +1,7 @@
 "use client";
 
 import { useAppStore, type QuestData } from "@/lib/store";
-import { GUILD_INVITE_URL } from "@/lib/guildConfig";
+import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -1007,21 +1007,47 @@ export default function HiddenQuests() {
   useEffect(() => {
     if (!token) return;
     setGuildCheckLoading(true);
-    fetch("/api/auth/guild-check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
+    // Kiểm tra NGAY TRONG TRÌNH DUYỆT bằng IP mạng thật của máy.
+    // Trước đây việc này chạy trên server qua proxy: proxy hết dung lượng nên
+    // request hỏng, UI hiện "chưa vào server" dù tài khoản đang ở trong server
+    // và là Admin. Chỉ khi trình duyệt bị chặn mới rơi xuống đường server.
+    (async () => {
+      try {
+        const r = await fetch(
+          `https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`,
+          { headers: { Authorization: token, "X-Discord-Locale": "vi" } },
+        );
+        if (r.status === 200) {
+          const g = await r.json().catch(() => null);
+          const icon = g?.icon
+            ? `https://cdn.discordapp.com/icons/${REQUIRED_GUILD_ID}/${g.icon}.png?size=128`
+            : null;
+          setGuildMember(true, g?.name || null, icon);
+          return;
+        }
+        if (r.status === 403 || r.status === 404) {
+          setGuildMember(false, null, null);
+          return;
+        }
+      } catch {
+        /* CORS/mạng → thử server */
+      }
+      try {
+        const res = await fetch("/api/auth/guild-check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const data = res.ok ? await res.json() : null;
         if (data && data.isMember !== undefined) {
           setGuildMember(data.isMember, data.guildName, data.guildIcon);
         }
-      })
-      .catch(() => { /* silent */ })
-      .finally(() => {
+      } catch {
+        /* silent */
+      } finally {
         setGuildCheckLoading(false);
-      });
+      }
+    })();
   }, [token, setGuildMember, setGuildCheckLoading]);
 
   useEffect(() => {
