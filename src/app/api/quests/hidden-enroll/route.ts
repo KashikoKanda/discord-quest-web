@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { QuestWorker } from "@/lib/questWorker";
 import { assignProxy } from "@/lib/proxyPool";
 import { getOrCreateProxy } from "@/lib/proxyFactory";
-import { getStickyProxy } from "@/lib/proxyHelper";
+import { getStickyProxy, bindStickyProxy } from "@/lib/proxyHelper";
 import { buildSuperProperties } from "@/lib/discord";
 import { isGatewayReady, getSuperProperties, getUserAgent } from "@/lib/gateway";
 import https from "node:https";
@@ -143,30 +143,17 @@ export async function POST(request: NextRequest) {
 
     const tokenId = tokenIdOf(token);
 
-    // Quest khoá vùng khác nước đang sống của token = đổi IP sang nước khác ngay
-    // lập tức, Discord đọc là phiên bị đánh cắp và thu hồi token. Log 22/11
-    // 03:00:07 enroll quest ID qua proxy Indonesia lúc 03:00:11 OK, tới
-    // 03:00:19 đã 401 sáu lần liền. 03:02:33 quest PL lặp lại đúng như vậy.
-    // Mặc định TỪ CHỐI; bật ALLOW_REGION_HOP=1 nếu chấp nhận mất token.
-    if (process.env.ALLOW_REGION_HOP !== "1") {
-      const current = getStickyProxy(tokenId);
-      const currentCountry = (current?.countryCode || "").toUpperCase();
-      const wantCountry = String(countryCode).toUpperCase();
-      if (currentCountry && wantCountry && currentCountry !== wantCountry) {
-        return NextResponse.json(
-          {
-            error:
-              `Quest này khoá vùng ${wantCountry} còn phiên của bạn đang ở ${currentCountry}. ` +
-              `Đổi vùng đột ngột sẽ khiến Discord thu hồi token ngay, nên mình chặn lại. ` +
-              `Chọn quest cùng vùng ${currentCountry}, hoặc dùng một tài khoản giữ phiên ở ${wantCountry}.`,
-            regionBlocked: true,
-            sessionCountry: currentCountry,
-            questCountry: wantCountry,
-          },
-          { status: 409 },
-        );
-      }
+    // Đổi vùng giống VPN: owner yêu cầu KHÔNG bắt đăng nhập lại token, chỉ cần
+    // đổi IP. Nên thay vì chặn 409, ta ghim luôn proxy nước của quest làm proxy
+    // của token → MỌI request sau đó (REST, enroll, worker) đi đúng MỘT IP mới,
+    // không còn cảnh VN và ID/PL cùng lúc cho một token (đó mới là thứ khiến
+    // Discord thu hồi ở log 03:00:11 → 03:00:19).
+    const wantCountry = String(countryCode).toUpperCase();
+    const sessionBefore = (getStickyProxy(tokenId)?.countryCode || "").toUpperCase();
+    if (sessionBefore && wantCountry && sessionBefore !== wantCountry) {
+      console.log(`[HiddenEnroll] Đổi vùng ${sessionBefore} → ${wantCountry} cho ${tokenId.slice(0, 12)} (giữ nguyên token, không đăng nhập lại)`);
     }
+
     QuestWorker.registerToken(tokenId, token);
 
     // ─── Block hidden quest enrollment while regular quest is running ───
@@ -187,6 +174,8 @@ export async function POST(request: NextRequest) {
     if (factory) {
       proxy = factory.entry;
       console.log(`[HiddenEnroll] ProxyFactory → ${factory.country} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
+      // Ghim ngay: từ giây này token chỉ đi qua IP của nước quest.
+      bindStickyProxy(tokenId, proxy as never);
     } else {
       const assignResult = await assignProxy(tokenId, countryCode);
       if (assignResult.ok) {
