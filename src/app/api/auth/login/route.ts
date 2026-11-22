@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { token, sessionId: clientSessionId, proxyCountry, platform } = await request.json();
+    const { token, sessionId: clientSessionId, proxyCountry, platform, clientVerified, profile: clientProfile } = await request.json();
 
     if (!token || typeof token !== "string") {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
@@ -58,6 +58,43 @@ export async function POST(request: NextRequest) {
       setProfileForToken(tokenId, platform === "android" ? "android-app" : "pc-web");
     }
     const userAgent = request.headers.get("user-agent") || undefined;
+
+    // ── Phiên đăng nhập do TRÌNH DUYỆT xác thực (IP mạng thật của máy) ──
+    // Owner: "thêm login từ ip của máy mình chứ không phải render cả email và
+    // token". Trình duyệt đã gọi Discord bằng chính IP của người dùng, server
+    // chỉ tạo phiên và trả hồ sơ nên không có request nào mang token đi từ IP
+    // Render hay từ proxy.
+    if (clientVerified === true && clientProfile && clientProfile.id) {
+      const sid = clientSessionId || generateSessionId();
+      try {
+        registerSession(tokenId, sid, request.headers.get("user-agent") || undefined);
+      } catch {
+        /* registry chỉ để thống kê */
+      }
+      console.log(`[Auth Login] ${tokenId} xác thực từ IP người dùng — server không gọi Discord, không proxy`);
+      return NextResponse.json({
+        success: true,
+        clientVerified: true,
+        proxyAssigned: false,
+        sessionId: sid,
+        profile: {
+          id: String(clientProfile.id),
+          username: clientProfile.username,
+          global_name: clientProfile.global_name || null,
+          discriminator: clientProfile.discriminator || "0",
+          avatar: clientProfile.avatar || null,
+          email: clientProfile.email,
+          phone: clientProfile.phone,
+          mfa_enabled: !!clientProfile.mfa_enabled,
+          flags: clientProfile.flags || 0,
+          premium_type: clientProfile.premium_type || 0,
+          locale: clientProfile.locale || "vi-VN",
+          verified: clientProfile.verified === true,
+          banner: clientProfile.banner,
+          accent_color: clientProfile.accent_color,
+        },
+      });
+    }
 
     initBuildVersion().catch(() => {});
 

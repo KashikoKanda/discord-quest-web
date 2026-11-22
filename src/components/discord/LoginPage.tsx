@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useAppStore } from "@/lib/store";
+import { verifyTokenLocal, loginPasswordLocal, submitMfaLocal, registerSessionLocal } from "@/lib/localLogin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -176,6 +177,21 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       // Server sẽ đợi proxy kết nối thành công trước khi verify token
       // Timeout phía client: server có thể thử 3 proxy × verify token, nếu treo
       // quá lâu thì báo rõ thay vì quay vòng "Đang xử lý..." mãi.
+      // Xác thực token NGAY TRONG TRÌNH DUYỆT: request đi từ IP mạng thật của
+      // máy, không qua Render cũng không qua proxy. Server chỉ tạo phiên.
+      const local = await verifyTokenLocal(tokenInput.trim());
+      if (!local.ok) {
+        setError(local.status === 401 ? "Token không hợp lệ hoặc đã hết hạn" : "Không kết nối được tới Discord, thử lại");
+        setStatus("");
+        setLoading(false);
+        return;
+      }
+      const serverProfile = await registerSessionLocal(tokenInput.trim(), local.profile!, platform);
+      setStatus("connected");
+      onLoginSuccess(tokenInput.trim(), (serverProfile || local.profile)!);
+      setLoading(false);
+      return;
+      // eslint-disable-next-line no-unreachable
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -566,6 +582,46 @@ function EmailLogin({ onLoginSuccess, parentLoading }: {
     setLoading(true);
     setError("");
     try {
+      // Đăng nhập email/mật khẩu NGAY TRONG TRÌNH DUYỆT (IP mạng thật).
+      const localResult = await loginPasswordLocal({
+        login: loginInput.trim(),
+        password,
+        captchaKey: captchaToken || hcaptchaToken || undefined,
+        captchaRqtoken: captcha?.rqtoken,
+        captchaSessionId: captcha?.sessionId,
+      });
+      if (localResult.state === "success") {
+        const serverProfile = await registerSessionLocal(localResult.token, localResult.profile);
+        onLoginSuccess(localResult.token, (serverProfile || localResult.profile)!);
+        return;
+      }
+      if (localResult.state === "captcha_required") {
+        setCaptcha({
+          sitekey: localResult.sitekey || "",
+          service: localResult.service || "hcaptcha",
+          rqdata: localResult.rqdata || "",
+          sessionId: "",
+          rqtoken: localResult.rqtoken || "",
+        });
+        setHcaptchaToken(null);
+        setError("");
+        setLoading(false);
+        return;
+      }
+      if (localResult.state === "mfa_required") {
+        setMfa({ ticket: localResult.ticket, method: localResult.method } as never);
+        setError("");
+        setLoading(false);
+        return;
+      }
+      setError(localResult.error || "Đăng nhập thất bại");
+      setHcaptchaToken(null);
+      if (hcaptchaWidgetId !== null && (window as any).hcaptcha) {
+        try { (window as any).hcaptcha.reset(hcaptchaWidgetId); } catch { /* ignore */ }
+      }
+      setLoading(false);
+      return;
+      // eslint-disable-next-line no-unreachable
       const res = await fetch("/api/auth/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -655,6 +711,17 @@ function EmailLogin({ onLoginSuccess, parentLoading }: {
     setLoading(true);
     setError("");
     try {
+      // Xác nhận 2FA NGAY TRONG TRÌNH DUYỆT (IP mạng thật).
+      const localMfa = await submitMfaLocal({ ticket: mfa.ticket, code: mfaCode.trim(), method: mfa.method as never });
+      if (localMfa.ok && localMfa.token) {
+        const serverProfile = await registerSessionLocal(localMfa.token, localMfa.profile!);
+        onLoginSuccess(localMfa.token, (serverProfile || localMfa.profile)!);
+        return;
+      }
+      setError(localMfa.error || "Mã MFA không đúng");
+      setLoading(false);
+      return;
+      // eslint-disable-next-line no-unreachable
       const res = await fetch("/api/auth/mfa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
