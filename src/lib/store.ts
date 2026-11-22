@@ -316,6 +316,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (storage) {
       if (guildName !== undefined) storage.setItem("dq_guild_name", guildName || "");
       if (guildIcon !== undefined) storage.setItem("dq_guild_icon", guildIcon || "");
+      // Nhớ kết quả đã xác nhận để lần vào sau hiện đúng ngay, không lóe thẻ
+      // khoá trong lúc chờ kiểm tra lại (vẫn kiểm lại mỗi phiên).
+      if (isMember === true) storage.setItem("dq_guild_member", "true");
+      else if (isMember === false) storage.removeItem("dq_guild_member");
     }
   },
 
@@ -453,7 +457,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           autoNitroEnabled: autoNitroPref,
           sessionId: restoredSid,
           sessionChecking: false,
-          isGuildMember: false,
+          // Dùng kết quả đã xác nhận trước đó (nếu có) để không lóe thẻ khoá;
+          // mỗi phiên vẫn kiểm tra lại ngầm.
+          isGuildMember: guildMemberRaw === "true",
           guildCheckLoading: true,
           guildCheckedOnce: false,
           guildName,

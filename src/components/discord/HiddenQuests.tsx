@@ -658,6 +658,9 @@ interface ProxyStats {
 
 export default function HiddenQuests() {
   const { setSidebarOpen, quests: dashboardQuests, token, isVerified, isGuildMember, guildCheckLoading, guildCheckedOnce, guildName, guildIcon, addLog, setGuildMember, setGuildCheckLoading, excludedQuestIds } = useAppStore();
+  // true ngay từ lần render đầu cho tới khi kiểm tra guild xong: chặn việc lóe
+  // thẻ "Chỉ dành cho thành viên" trong lúc chờ Discord trả lời.
+  const [checking, setChecking] = useState(true);
   const [quests, setQuests] = useState<QuestData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1076,6 +1079,7 @@ export default function HiddenQuests() {
       }
       // Không xác định được thì GIỮ NGUYÊN trạng thái cũ, tránh nháy khoá oan.
       setGuildCheckLoading(false);
+      setChecking(false);
     })();
   }, [token, setGuildMember, setGuildCheckLoading]);
 
@@ -1402,7 +1406,7 @@ export default function HiddenQuests() {
       {/* ═══ Scrollable area ═══ */}
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative">
 
-        {(guildCheckLoading || !guildCheckedOnce || (!isGuildMember && token)) && token ? (
+        {(checking || guildCheckLoading || !guildCheckedOnce || (!isGuildMember && token)) && token ? (
           <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 sm:py-20 relative overflow-hidden">
             <div className="absolute inset-0 pointer-events-none">
               <div className="absolute top-1/4 left-1/4 w-[45vw] h-[45vw] rounded-full gpu-layer" style={{ background: "radial-gradient(circle, rgba(94,106,210,0.18) 0%, transparent 60%)", animation: "aurora-drift-1 8s ease-in-out infinite alternate" }} />
@@ -1414,7 +1418,7 @@ export default function HiddenQuests() {
                 <div className="absolute inset-0 rounded-2xl gpu-layer" style={{ background: "radial-gradient(circle, rgba(88,101,242,0.5) 0%, transparent 70%)", animation: "icon-glow 2s ease-in-out infinite" }} />
                 <div className="relative w-full h-full rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#15171D] to-[#11131A] border border-white/[0.08] overflow-hidden">
                   {guildIcon ? <img src={guildIcon} alt="" className="w-full h-full object-cover rounded-2xl" /> : <Users className="w-9 h-9 sm:w-10 sm:h-10 text-[#7B8CFF]" />}
-                  {(guildCheckLoading || !guildCheckedOnce) && (
+                  {(checking || guildCheckLoading || !guildCheckedOnce) && (
                     <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
                       <div className="absolute -inset-full" style={{ background: "linear-gradient(110deg, transparent 35%, rgba(255,255,255,0.12) 50%, transparent 65%)", backgroundSize: "200% 100%", animation: "shimmer-sweep 2s linear infinite" }} />
                     </div>
@@ -1426,8 +1430,8 @@ export default function HiddenQuests() {
                   )}
                 </div>
               </div>
-              <motion.div key={(guildCheckLoading || !guildCheckedOnce) ? "loading-text" : "locked-text"} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="flex flex-col items-center">
-                {(guildCheckLoading || !guildCheckedOnce) ? (
+              <motion.div key={(checking || guildCheckLoading || !guildCheckedOnce) ? "loading-text" : "locked-text"} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="flex flex-col items-center">
+                {(checking || guildCheckLoading || !guildCheckedOnce) ? (
                   <>
                     <p className="text-[14px] sm:text-[15px] text-white font-semibold tracking-tight">Đang kiểm tra tư cách thành viên</p>
                     <p className="text-[11px] text-white/40 mt-1.5 font-mono">Guild membership verification</p>
