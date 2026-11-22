@@ -160,6 +160,9 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");  // "connecting" | "connected" | ""
   const [pasted, setPasted] = useState(false);
+  const [preview, setPreview] = useState<null | { id: string; username: string; global_name: string | null; discriminator: string; avatar: string | null; locale: string | null; verified: boolean; country: string | null }>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const handleLogin = async () => {
     if (!tokenInput.trim()) { setError("Vui lòng nhập Discord token"); return; }
@@ -216,6 +219,30 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const tokenLen = tokenInput.trim().length;
   const looksValid = tokenLen >= 50;
 
+  const ccFlag = (cc: string) =>
+    /^[A-Za-z]{2}$/.test(cc) ? String.fromCodePoint(...cc.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0))) : "🌐";
+
+  const previewToken = async () => {
+    const t = tokenInput.trim();
+    if (!t) { setPreviewError("Dán token trước đã"); return; }
+    setPreviewing(true); setPreviewError(""); setPreview(null);
+    try {
+      const res = await fetch("/api/auth/preview", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }),
+      });
+      const data = await res.json();
+      if (data?.success && data.account) {
+        setPreview({ ...data.account, country: data.country || null });
+      } else {
+        setPreviewError(data?.error || "Không xem trước được");
+      }
+    } catch {
+      setPreviewError("Lỗi kết nối");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const pasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -231,11 +258,22 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         <label className="text-[11px] font-semibold text-white/45 uppercase tracking-[0.14em]">
           Discord Token
         </label>
-        <span className={`text-[10px] font-mono tabular-nums transition-colors duration-300 ${
-          looksValid ? "text-[#3DD68C]" : tokenLen > 0 ? "text-white/40" : "text-white/20"
-        }`}>
-          {tokenLen > 0 ? `${tokenLen} ký tự` : "chưa nhập"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-mono tabular-nums transition-colors duration-300 ${
+            looksValid ? "text-[#3DD68C]" : tokenLen > 0 ? "text-white/40" : "text-white/20"
+          }`}>
+            {tokenLen > 0 ? `${tokenLen} ký tự` : "chưa nhập"}
+          </span>
+          <button
+            type="button"
+            onClick={previewToken}
+            disabled={previewing || isLoading || tokenLen === 0}
+            className="h-6 px-2 rounded-md text-[10px] font-semibold text-white/55 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] transition-all duration-200 disabled:opacity-35 flex items-center gap-1"
+          >
+            {previewing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+            {previewing ? "Đang xem" : "Xem trước"}
+          </button>
+        </div>
       </div>
 
       <div className={`token-shell mb-3 ${looksValid ? "is-valid" : ""}`}>
@@ -279,6 +317,40 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
           </div>
         </div>
       </div>
+
+      {(preview || previewError) && (
+        <div className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 animate-scale-in">
+          {previewError ? (
+            <p className="text-[12px] text-[#F5B544] flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{previewError}
+            </p>
+          ) : preview && (
+            <div className="flex items-center gap-3">
+              <img
+                src={preview.avatar
+                  ? `https://cdn.discordapp.com/avatars/${preview.id}/${preview.avatar}.png?size=64`
+                  : `https://cdn.discordapp.com/embed/avatars/${Number(preview.discriminator || 0) % 5}.png`}
+                alt=""
+                className="w-9 h-9 rounded-full ring-1 ring-white/10 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-white truncate">
+                  {preview.global_name || preview.username}
+                  {preview.discriminator !== "0" && <span className="text-white/35 font-normal">#{preview.discriminator}</span>}
+                </p>
+                <p className="text-[10px] font-mono text-white/35 truncate">
+                  {preview.username} · {preview.id}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[13px] leading-none">{preview.country ? ccFlag(preview.country) : "🌐"}</p>
+                <p className="text-[9px] text-white/30 mt-1 uppercase tracking-wide">{preview.country || "không rõ"}</p>
+              </div>
+            </div>
+          )}
+          <p className="text-[9px] text-white/25 mt-2">Chỉ xem trước, chưa đăng nhập{preview?.locale ? ` · locale ${preview.locale}` : ""}</p>
+        </div>
+      )}
 
       {error && (
         <div className="mb-3 flex items-start gap-2 p-2.5 rounded-xl bg-[#F6606F]/[0.08] border border-[#F6606F]/20 text-[#F6606F] text-xs animate-lp-shake">
