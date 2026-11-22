@@ -14,16 +14,34 @@ export const maxDuration = 60;
 
 async function probe(proxyUrl: string) {
   const started = Date.now();
+  let exit: Record<string, unknown> | null = null;
   const agent = new ProxyAgent({ uri: proxyUrl, requestTls: { rejectUnauthorized: false } });
   try {
+    // Đo luôn IP thoát thật + ASN để biết proxy có phải dân dụng không
+    try {
+      const ipRes = await undiciFetch("https://ipwho.is/", { dispatcher: agent, signal: AbortSignal.timeout(10_000) } as never);
+      const ipInfo: any = await ipRes.json().catch(() => null);
+      if (ipInfo?.success !== false) {
+        exit = {
+          ip: ipInfo?.ip ?? null,
+          country: ipInfo?.country_code ?? null,
+          city: ipInfo?.city ?? null,
+          asn: ipInfo?.connection?.asn ?? null,
+          org: ipInfo?.connection?.org ?? null,
+          isp: ipInfo?.connection?.isp ?? null,
+          type: ipInfo?.type ?? null,
+        };
+      }
+    } catch { /* đo IP lỗi thì bỏ, không ảnh hưởng probe */ }
+
     const res = await undiciFetch("https://discord.com/api/v9/gateway", {
       dispatcher: agent,
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/138.0.0.0" },
       signal: AbortSignal.timeout(12_000),
     } as never);
-    return { ok: res.ok, status: res.status, ms: Date.now() - started };
+    return { ok: res.ok, status: res.status, ms: Date.now() - started, exit };
   } catch (err) {
-    return { ok: false, status: null, ms: Date.now() - started, error: (err instanceof Error ? err.message : String(err)).slice(0, 120) };
+    return { ok: false, status: null, ms: Date.now() - started, exit, error: (err instanceof Error ? err.message : String(err)).slice(0, 120) };
   } finally {
     await agent.close().catch(() => {});
   }
