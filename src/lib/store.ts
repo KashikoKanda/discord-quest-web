@@ -167,6 +167,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       sid = `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       if (storage) storage.setItem("dq_session_id", sid);
     }
+    // Lưu token vào localStorage CỦA CHÍNH TRÌNH DUYỆT OWNER (không gửi đi đâu
+    // khác ngoài server mình, qua HTTPS). Render gói free không gắn được đĩa nên
+    // mỗi lần deploy DB bị xoá sạch; giữ token ở trình duyệt giúp trang tự đăng
+    // nhập lại thay vì bắt owner dán token lại.
+    if (storage) {
+      storage.setItem("dq_token", token);
+      try { storage.setItem("dq_profile", JSON.stringify(profile)); } catch {}
+    }
     set({
       isLoggedIn: true,
       token,
@@ -195,6 +203,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   logout: () => {
+    if (storage) { storage.removeItem("dq_token"); storage.removeItem("dq_profile"); }
     // Release server-side resources (proxy SIDs, QuestWorker, Session) before clearing state
     const currentToken = get().token;
     const currentSid = get().sessionId;
@@ -349,6 +358,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Tránh IP bị Discord nhận diện khi session đã bị evict
         const tokenId = `t_${token.slice(0, 16)}`;
         set({ sessionChecking: true });
+
+        // Render gói free: mỗi lần deploy DB bị xoá nên token biến mất khỏi
+        // server. Đăng ký lại token ngay từ trình duyệt trước khi kiểm tra
+        // session, nhờ vậy deploy không còn đá owner về trang login.
+        try {
+          const savedProfile = JSON.parse(profileRaw) as { platform?: string };
+          await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, platform: savedProfile?.platform || "pc-web" }),
+          });
+        } catch {}
 
         try {
           const checkRes = await fetch("/api/auth/session", {
