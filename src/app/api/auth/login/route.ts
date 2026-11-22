@@ -41,24 +41,6 @@ export async function POST(request: NextRequest) {
 
     const { token, sessionId: clientSessionId, proxyCountry, platform, clientVerified, profile: clientProfile } = await request.json();
 
-    if (!token || typeof token !== "string") {
-      return NextResponse.json({ error: "Token is required" }, { status: 400 });
-    }
-
-    // Bỏ nháy/tiền tố "Bot "/"Bearer " nếu người dùng dán kèm.
-    const cleanToken = normalizeToken(token);
-    if (!cleanToken) {
-      return NextResponse.json({ error: "Token is required" }, { status: 400 });
-    }
-    const tokenId = tokenIdOf(cleanToken);
-
-    // Owner chọn token này lấy từ đâu: Android hay PC. Ghim theo tokenId để
-    // mọi request sau đó (REST, quest, gateway) khai đúng một loại client.
-    if (platform === "android" || platform === "pc") {
-      setProfileForToken(tokenId, platform === "android" ? "android-app" : "pc-web");
-    }
-    const userAgent = request.headers.get("user-agent") || undefined;
-
     // ── Phiên đăng nhập do TRÌNH DUYỆT xác thực (IP mạng thật của máy) ──
     // Owner: "thêm login từ ip của máy mình chứ không phải render cả email và
     // token". Trình duyệt đã gọi Discord bằng chính IP của người dùng, server
@@ -95,6 +77,25 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
+
+    if (!token || typeof token !== "string") {
+      return NextResponse.json({ error: "Token is required" }, { status: 400 });
+    }
+
+    // Bỏ nháy/tiền tố "Bot "/"Bearer " nếu người dùng dán kèm.
+    const cleanToken = normalizeToken(token);
+    if (!cleanToken) {
+      return NextResponse.json({ error: "Token is required" }, { status: 400 });
+    }
+    const tokenId = tokenIdOf(cleanToken);
+
+    // Owner chọn token này lấy từ đâu: Android hay PC. Ghim theo tokenId để
+    // mọi request sau đó (REST, quest, gateway) khai đúng một loại client.
+    if (platform === "android" || platform === "pc") {
+      setProfileForToken(tokenId, platform === "android" ? "android-app" : "pc-web");
+    }
+    const userAgent = request.headers.get("user-agent") || undefined;
 
     initBuildVersion().catch(() => {});
 
