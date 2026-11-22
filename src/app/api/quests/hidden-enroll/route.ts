@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { QuestWorker } from "@/lib/questWorker";
 import { assignProxy } from "@/lib/proxyPool";
+import { getOrCreateProxy } from "@/lib/proxyFactory";
 import { buildSuperProperties } from "@/lib/discord";
 import { isGatewayReady, getSuperProperties, getUserAgent } from "@/lib/gateway";
 import https from "node:https";
@@ -150,24 +151,31 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // 1. Assign proxy từ ProxyPool (1 token = 1 SID/quốc gia)
-    const assignResult = await assignProxy(tokenId, countryCode);
-    if (!assignResult.ok) {
-      // Trả về lỗi cụ thể để frontend hiện đúng nút
-      const reason = assignResult.reason; // "no_proxy" hoặc "full"
-      return NextResponse.json({
-        success: false,
-        proxyError: reason,
-        error: reason === "no_proxy"
-          ? `Không thể tìm thấy proxy cho ${countryCode}`
-          : `Hết slot proxy ${countryCode} (tối đa 2 tài khoản/proxy), quay lại sau ít phút`,
-      }, { status: 502 });
+    // 1. Proxy: TẠO RIÊNG cho uid ở đúng quốc gia của quest (ResiFactory).
+    //    - Cùng uid + cùng quốc gia → dùng lại proxy đã tạo, không tạo thêm.
+    //    - Mỗi uid một proxy riêng để tránh dính cờ spam.
+    //    - Tạo thất bại mới rơi về pool tĩnh như cũ.
+    let proxy: { host: string; port: number; user: string; pass: string; countryCode?: string | null } | null = null;
+    const factory = await getOrCreateProxy(tokenId, countryCode).catch(() => null);
+    if (factory) {
+      proxy = factory.entry;
+      console.log(`[HiddenEnroll] ProxyFactory → ${factory.country} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
+    } else {
+      const assignResult = await assignProxy(tokenId, countryCode);
+      if (!assignResult.ok) {
+        const reason = assignResult.reason; // "no_proxy" hoặc "full"
+        return NextResponse.json({
+          success: false,
+          proxyError: reason,
+          error: reason === "no_proxy"
+            ? `Không thể tạo proxy cho ${countryCode}, thử lại sau ít phút`
+            : `Hết slot proxy ${countryCode} (tối đa 2 tài khoản/proxy), quay lại sau ít phút`,
+        }, { status: 502 });
+      }
+      proxy = assignResult.assignment.proxy;
+      console.log(`[HiddenEnroll] ProxyPool → ${proxy.countryCode} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
     }
-
-    const assignment = assignResult.assignment;
-    const proxy = assignment.proxy;
     const proxyUri = `http://${encodeURIComponent(proxy.user)}:${encodeURIComponent(proxy.pass)}@${proxy.host}:${proxy.port}`;
-    console.log(`[HiddenEnroll] ProxyPool → ${proxy.countryCode} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
 
     const agent = new HttpsProxyAgent(proxyUri, { keepAlive: false });
 

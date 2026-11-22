@@ -6,6 +6,8 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure, proxyAuthBlockedFor } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders } from "@/lib/uaPool";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
+import { getEphemeralProxy } from "@/lib/proxyFactory";
+import { addTransientProxy } from "@/lib/proxyList";
 import { getClientCountry } from "@/lib/geoCountry";
 
 /**
@@ -80,6 +82,17 @@ export async function POST(request: NextRequest) {
           `[Auth Login] ⚠ Pool KHÔNG có proxy ${clientCountry} → token mới sẽ đi từ IP nước khác, ` +
             `Discord rất dễ coi là phiên bị đánh cắp. Thêm proxy ${clientCountry} vào PROXY_LIST_B64.`,
         );
+      }
+    }
+
+    // Pool tĩnh không có nước người dùng → tạo proxy đúng nước đó ngay tại chỗ.
+    // Owner: login dùng proxy theo nước user nhưng KHÔNG duy trì, tạo thoải mái.
+    if (clientCountry && !availableCountries.includes(clientCountry)) {
+      const eph = await getEphemeralProxy(clientCountry).catch(() => null);
+      if (eph) {
+        addTransientProxy(eph.entry);
+        availableCountries.push(clientCountry.toUpperCase());
+        console.log(`[Auth Login] Đã tạo proxy ${clientCountry} cho phiên login (${eph.entry.host}:${eph.entry.port}).`);
       }
     }
 

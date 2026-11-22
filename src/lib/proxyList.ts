@@ -180,6 +180,17 @@ export function parseProxyLine(line: string): ProxyEntry | null {
 // ──────────────────────────────────────────────────
 
 let cachedProxies: ProxyEntry[] = [];
+
+/**
+ * Thêm một proxy tạo tại chỗ (ProxyFactory) vào pool tạm trong RAM.
+ * Dùng cho login: tạo proxy đúng nước người dùng rồi để luồng login hiện có
+ * chọn và ghim như proxy thường. Mất khi restart, không ghi file.
+ */
+export function addTransientProxy(entry: ProxyEntry): void {
+  if (cachedProxies.some((p) => p.host === entry.host && p.port === entry.port && p.user === entry.user)) return;
+  cachedProxies = [...cachedProxies, entry];
+  cacheTimestamp = Date.now();
+}
 let cacheTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
