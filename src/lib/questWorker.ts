@@ -1086,6 +1086,9 @@ async function processQuest(
 
   const abortCtrl = new AbortController();
   state.abortControllers.set(questId, abortCtrl);
+  // Đánh dấu ngay từ đầu: trước đây chỉ các handler con set "running" nên UI
+  // có lúc hiện "đang làm 0 quest" dù quest vẫn đang chạy.
+  updateQuestProgress(tokenId, questId, 0, "running");
 
   try {
     switch (questType) {
@@ -1221,6 +1224,22 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
           const delay = Math.floor(Math.random() * 120000) + 60000; // 60000-180000ms
           addLog(tokenId, "info", `Nghỉ ${(delay / 1000).toFixed(1)}s trước khi làm quest tiếp theo...`);
           await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+
+      // Lượt 2 cho single: quest vừa mở, hoặc quest bị cắt giữa chừng, vẫn được
+      // làm tiếp ngay trong cùng lượt thay vì chờ tick auto sau 30 phút.
+      if (!state.runStopped) {
+        const remainingSingle = await fetchRemainingQuests(tokenId, state.token);
+        if (remainingSingle && remainingSingle.length > 0) {
+          addLog(tokenId, "warn", `Còn ${remainingSingle.length} quest chưa xong, làm tiếp (single)...`);
+          for (const q of sortQuestsByPriority(remainingSingle)) {
+            if (state.runStopped) break;
+            await processQuest(tokenId, q);
+            const d = Math.floor(Math.random() * 60000) + 30000;
+            addLog(tokenId, "info", `Nghỉ ${(d / 1000).toFixed(0)}s trước quest tiếp theo...`);
+            await new Promise(resolve => setTimeout(resolve, d));
+          }
         }
       }
     }
@@ -1470,6 +1489,14 @@ export const QuestWorker = {
                 }
               } catch { /* ignore */ }
             }
+          }
+
+          // SINGLE: người dùng bấm một quest, xong quest đó phải đi tiếp quest kế
+          // chứ không dừng giữa danh sách (trước đây dừng luôn → "treo ở 0 quest").
+          if (!state.multiQuest && !state.runStopped) {
+            addLog(tokenId, "info", "Xong quest này, tiếp tục quest kế tiếp (single)...");
+            await processAllQuests(tokenId, false, false);
+            return;
           }
 
           // giữ gateway sống (xem chú thích ở processAllQuests)
