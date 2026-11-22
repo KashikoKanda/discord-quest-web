@@ -592,7 +592,15 @@ export async function verifyDiscordToken(token: string) {
  * Throws if quest enrollment is blocked
  */
 export async function fetchDiscordQuests(token: string, tokenId?: string) {
-  let res = await discordFetch(token, "/quests/@me", {}, tokenId);
+  // discordFetch NÉM lỗi (không trả response) khi cầu dao proxy đang khoá, nên
+  // phải bắt ở đây rồi coi như lỗi proxy để còn rơi xuống nhánh đọc trực tiếp.
+  let res: Response;
+  try {
+    res = await discordFetch(token, "/quests/@me", {}, tokenId);
+  } catch (e) {
+    console.log(`[Quests] proxy ném lỗi: ${(e as Error)?.message || e}`);
+    res = new Response(JSON.stringify({ message: "proxy-error" }), { status: 503 });
+  }
   // XEM danh sách quest không cần proxy. Owner chốt: "quest ẩn có thể dùng ip
   // render để xem ... chỉ có nhận quest ẩn vẫn giữ nguyên". Vì vậy khi proxy
   // hết dung lượng (407/5xx) thì đọc danh sách trực tiếp bằng IP Render để
