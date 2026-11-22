@@ -101,7 +101,13 @@ const AUTO_LOOP_IDLE_MS = Math.max(
  * Mỗi quest đẩy ~1 request/2s; 6 quest song song ≈ 3 request/s là ngưỡng còn
  * giống người dùng thật. Đẩy cao hơn dễ bị Discord gắn cờ và thu hồi token.
  */
-const QUEST_CONCURRENCY = Math.max(1, Number(process.env.QUEST_CONCURRENCY || 6));
+// 0 = không giới hạn: chạy TẤT CẢ quest cùng lúc (owner yêu cầu multi phải làm
+// toàn bộ quest một lượt). Đặt QUEST_CONCURRENCY=<n> nếu muốn chặn lại.
+const QUEST_CONCURRENCY = Math.max(0, Number(process.env.QUEST_CONCURRENCY || 0));
+// Warm-up (token mới <15 phút chạy 2 quest song song) mặc định TẮT: nó là lý do
+// "multi không làm toàn bộ cùng lúc" ngay sau khi login. Bật lại bằng
+// WARMUP_CONCURRENCY=2 nếu cần chạy chậm cho token vừa tạo.
+const WARMUP_CONCURRENCY = Math.max(0, Number(process.env.WARMUP_CONCURRENCY || 0));
 
 /**
  * Nhịp poll video-progress. Proxy tính tiền theo dung lượng nên mỗi request
@@ -117,6 +123,7 @@ const VIDEO_POLL_MAX_MS = Math.max(
 );
 
 /** Chạy `worker` trên từng item với tối đa `limit` việc song song. */
+
 async function runWithConcurrency<T>(
   items: T[],
   limit: number,
@@ -1164,8 +1171,11 @@ async function processAllQuests(tokenId: string, skipAutoClaim: boolean = false,
       // Token vừa login (<15 phút) chạy "warm-up": ít song song hơn và chậm hơn.
       // Token mới chưa có lịch sử phiên, bắn dồn dập ngay sau khi tạo là cách
       // nhanh nhất để Discord thu hồi.
-      const isWarmUp = Date.now() - (state.registeredAt || 0) < 15 * 60 * 1000;
-      const concurrency = isWarmUp ? Math.min(2, QUEST_CONCURRENCY) : QUEST_CONCURRENCY;
+      const isWarmUp = WARMUP_CONCURRENCY > 0 && Date.now() - (state.registeredAt || 0) < 15 * 60 * 1000;
+      const baseCap = isWarmUp ? WARMUP_CONCURRENCY : QUEST_CONCURRENCY;
+      // cap 0 = không chặn → mỗi quest một slot, tất cả chạy cùng lúc
+      const allCount = Math.max(1, doableQuests.length);
+      const concurrency = baseCap > 0 ? Math.min(baseCap, allCount) : allCount;
       addLog(
         tokenId,
         "info",
