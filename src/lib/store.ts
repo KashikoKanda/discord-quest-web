@@ -363,17 +363,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         const tokenId = `t_${token.slice(0, 16)}`;
         set({ sessionChecking: true });
 
-        // Render gói free: mỗi lần deploy DB bị xoá nên token biến mất khỏi
-        // server. Đăng ký lại token ngay từ trình duyệt trước khi kiểm tra
-        // session, nhờ vậy deploy không còn đá owner về trang login.
-        try {
-          const savedProfile = JSON.parse(profileRaw) as { platform?: string };
-          await fetch("/api/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token, platform: savedProfile?.platform || "pc-web" }),
-          });
-        } catch {}
+        // KHÔNG gọi /api/auth/login ở đây nữa. Trước đây mỗi lần khôi phục phiên
+        // lại POST login không kèm clientVerified → rơi vào đường login QUA PROXY
+        // của server, tạo request thứ hai mang cùng token từ IP/identity khác.
+        // Log Render 23:27:00 ghi đúng "[Auth Login] Người dùng login từ VN ·
+        // pool có: VN" rồi proxy trả 401 ngay sau khi trình duyệt vừa đăng nhập.
 
         try {
           const checkRes = await fetch("/api/auth/session", {

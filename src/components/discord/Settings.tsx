@@ -382,14 +382,28 @@ export default function Settings() {
     setTimeout(() => { setResetting(false); setPage("dashboard"); setSidebarOpen(false); }, 1000);
   }, [token, resetting, logout, resetState, setPage, setSidebarOpen]);
 
+  // Nạp hồ sơ NGAY TRONG TRÌNH DUYỆT (IP máy). Trước đây gọi POST /api/profile
+  // để server tự gọi Discord bằng token qua proxy: mở trang Profile là token
+  // xuất hiện ở client thứ hai (identity + IP khác) → Discord thu hồi ngay.
   const loadProfile = async () => {
     if (!token) return;
     setLoading(true);
+    const API = "https://discord.com/api/v9";
+    const hdr = { Authorization: token, "Content-Type": "application/json", "X-Discord-Locale": "vi", "X-Discord-Timezone": "Asia/Saigon" };
     try {
-      const res = await fetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
-      if (!res.ok) { setLoading(false); return; }
-      const data = await res.json();
-      if (data.success) setFullProfile(data.data);
+      const me = await fetch(`${API}/users/@me`, { headers: hdr, cache: "no-store" });
+      if (!me.ok) { setLoading(false); return; }
+      const user = await me.json();
+      const [prof, sett] = await Promise.all([
+        fetch(`${API}/users/${user.id}/profile`, { headers: hdr, cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+        fetch(`${API}/users/@me/settings`, { headers: hdr, cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+      ]);
+      setFullProfile({
+        user, profile: prof || {}, settings: sett || {},
+        guilds: [], connections: [], billing: [], subscriptions: [],
+      } as never);
     } catch { /* ignore */ }
     setLoading(false);
   };

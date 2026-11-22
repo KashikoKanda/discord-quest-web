@@ -30,6 +30,24 @@ import { getClientCountry } from "@/lib/geoCountry";
  */
 export async function POST(request: NextRequest) {
   try {
+    // CHỈ nhận login đã được TRÌNH DUYỆT xác thực. Đường login qua proxy cũ
+    // (server gọi Discord bằng token) chính là thứ làm token bị revoke: log
+    // 23:27:00 có "[Auth Login] Người dùng login từ VN · pool có: VN" → proxy
+    // trả 401 ngay sau khi trình duyệt vừa đăng nhập cùng token.
+    {
+      const peek = await request.clone().json().catch(() => null);
+      if (!peek || peek.clientVerified !== true) {
+        return NextResponse.json(
+          {
+            success: false,
+            clientOnly: true,
+            error: "Đăng nhập chỉ chạy từ trình duyệt (IP của bạn). Tải lại trang rồi thử lại.",
+          },
+          { status: 403 },
+        );
+      }
+    }
+
     // Bảo trì thì chặn login ngay từ cửa: không gọi proxy, không gọi Discord,
     // không tốn một byte dung lượng nào, người dùng nhận đúng một câu duy nhất.
     if (proxyAuthBlockedFor() > 0) {

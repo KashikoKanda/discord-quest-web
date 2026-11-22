@@ -333,35 +333,10 @@ export async function POST(request: NextRequest) {
     const discordError = parseDiscordError(res.statusCode, res.body);
     console.log(`[HiddenEnroll] Discord error: ${discordError.code} — ${discordError.message}`);
 
-    // Nếu lỗi do tài khoản không hợp lệ (401) — thử lại trực tiếp
-    if (res.statusCode === 401) {
-      console.log(`[HiddenEnroll] 401 qua proxy, thử lại trực tiếp...`);
-      const { discordFetch } = await import("@/lib/discord");
-      const directRes = await discordFetch(token, `/quests/${questId}/enroll`, {
-        method: "POST",
-        body,
-        headers: { AndroidRequest: isMobile ? "true" : "false" },
-      }, tokenId);
-
-      if (directRes.ok || directRes.status === 204) {
-        let enrollData: unknown = null;
-        try { enrollData = await directRes.json(); } catch {}
-        return NextResponse.json({
-          success: true,
-          message: `Đã nhận quest (kết nối trực tiếp)`,
-          proxyInfo: { country: proxy.countryCode || countryCode, ip: proxy.host, port: proxy.port },
-          enrollData,
-        });
-      }
-
-      const directErrText = await directRes.text().catch(() => "");
-      const directDiscordError = parseDiscordError(directRes.status, directErrText);
-      return NextResponse.json({
-        success: false,
-        discordCode: directDiscordError.code,
-        error: directDiscordError.message,
-      });
-    }
+    // KHÔNG retry trực tiếp từ IP Render khi gặp 401 (DISABLE_DIRECT_FALLBACK=1).
+    // Log 23:30:36 cho thấy đúng nhánh này chạy: "[HiddenEnroll] 401 qua proxy,
+    // thử lại trực tiếp..." rồi Discord thu hồi token vì request mang token đi
+    // từ IP datacenter. 401 nghĩa là token đã bị từ chối, trả lỗi luôn.
 
     // Các lỗi khác — trả về lỗi Discord đã parse
     return NextResponse.json({

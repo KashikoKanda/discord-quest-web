@@ -30,7 +30,9 @@ let refreshInitialized = false;
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const guildId = searchParams.get("guildId") || REQUIRED_GUILD_ID;
-  const userToken = searchParams.get("token");
+  // KHÔNG dùng token người dùng ở route này nữa: mọi request mang token phải
+  // đi từ trình duyệt. Chỉ lấy dữ liệu công khai từ invite.
+  const userToken = null as string | null;
 
   if (!guildId) {
     return NextResponse.json({
