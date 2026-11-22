@@ -418,7 +418,10 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${preview ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"}`}>
       <div className="overflow-hidden">
       <div className="mb-3 animate-lp-pop">
-        <p className="text-[10px] text-white/35 mb-1.5">Token này lấy từ đâu?</p>
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-white/90 mb-2 tracking-tight">
+          <KeyRound className="w-3.5 h-3.5 text-[#8B7CF6]" />
+          Token này lấy từ đâu?
+        </p>
         <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
           {([
             { key: "pc", label: "PC (web)" },
@@ -1241,13 +1244,33 @@ export default function LoginPage() {
             </div>
 
             {/* TOS warning */}
-            <div className="mb-5 flex items-start gap-2.5 p-3 rounded-lg bg-[#F6606F]/[0.08] border border-[#F6606F]/20">
-              <AlertTriangle className="w-4 h-4 text-[#F6606F] shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[12px] font-semibold text-[#F6606F] mb-0.5">Vi phạm Điều khoản Discord</p>
-                <p className="text-[11px] text-white/50 leading-relaxed">
-                  Công cụ này vi phạm TOS Discord. Tài khoản có thể bị đình chỉ.
-                </p>
+            <div className="relative mb-5 p-[1px] rounded-xl overflow-hidden">
+              {/* viền gradient đỏ hồng phát sáng */}
+              <div
+                className="absolute inset-0 rounded-xl"
+                style={{ background: "linear-gradient(135deg, rgba(246,96,111,0.95) 0%, rgba(232,121,249,0.55) 50%, rgba(246,96,111,0.35) 100%)" }}
+              />
+              <div
+                className="relative flex items-start gap-3 p-3.5 rounded-[11px]"
+                style={{
+                  background: "linear-gradient(135deg, rgba(246,96,111,0.16) 0%, rgba(24,12,18,0.96) 55%, rgba(246,96,111,0.10) 100%)",
+                  boxShadow: "0 12px 30px -14px rgba(246,96,111,0.55), inset 0 1px 0 rgba(255,255,255,0.06)",
+                }}
+              >
+                <div
+                  className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ background: "rgba(246,96,111,0.18)", border: "1px solid rgba(246,96,111,0.45)" }}
+                >
+                  <AlertTriangle className="w-[18px] h-[18px] text-[#FF7A86]" strokeWidth={2.6} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-extrabold text-[#FF7A86] tracking-tight leading-tight">
+                    Vi phạm Điều khoản Discord
+                  </p>
+                  <p className="text-[12px] font-semibold text-white/85 leading-relaxed mt-1">
+                    Công cụ này vi phạm TOS Discord. Tài khoản có thể bị đình chỉ.
+                  </p>
+                </div>
               </div>
             </div>
 
