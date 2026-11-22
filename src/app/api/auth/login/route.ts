@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { token, sessionId: clientSessionId, proxyCountry, platform } = await request.json();
+    const { token, sessionId: clientSessionId, proxyCountry, platform, clientVerified, profile: clientProfile } = await request.json();
 
     if (!token || typeof token !== "string") {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
@@ -58,6 +58,47 @@ export async function POST(request: NextRequest) {
       setProfileForToken(tokenId, platform === "android" ? "android-app" : "pc-web");
     }
     const userAgent = request.headers.get("user-agent") || undefined;
+
+    // ── LOGIN XÁC THỰC NGAY TRONG TRÌNH DUYỆT (IP mạng thật) ──
+    // Owner chốt 22/11/2026: "sửa lại Login từ ip máy thật luôn". Trình duyệt đã
+    // gọi /users/@me bằng chính token đó (bước quét) và gửi kèm profile, nên
+    // server KHÔNG gửi token tới Discord nữa, cũng không cần proxy.
+    // Lý do: nếu vừa quét từ IP nhà vừa login qua proxy thì cùng một token xuất
+    // hiện ở hai IP trong vài giây — đúng mẫu Discord coi là phiên bị đánh cắp.
+    if (clientVerified === true && clientProfile && clientProfile.id) {
+      const sid = clientSessionId || generateSessionId();
+      try {
+        registerSession(tokenId, sid, request.headers.get("user-agent") || undefined);
+      } catch {
+        /* registry chỉ để thống kê, không chặn login */
+      }
+      console.log(
+        `[Auth Login] ${tokenId} xác thực từ IP người dùng (clientVerified) — không gửi token từ server, không dùng proxy`,
+      );
+      return NextResponse.json({
+        success: true,
+        clientVerified: true,
+        proxyAssigned: false,
+        sessionId: sid,
+        profile: {
+          id: String(clientProfile.id),
+          username: clientProfile.username,
+          global_name: clientProfile.global_name || null,
+          discriminator: clientProfile.discriminator || "0",
+          avatar: clientProfile.avatar || null,
+          email: clientProfile.email,
+          phone: clientProfile.phone,
+          mfa_enabled: !!clientProfile.mfa_enabled,
+          flags: clientProfile.flags || 0,
+          premium_type: clientProfile.premium_type || 0,
+          locale: clientProfile.locale || "vi-VN",
+          verified: clientProfile.verified === true,
+          banner: clientProfile.banner,
+          accent_color: clientProfile.accent_color,
+          avatar_decoration: clientProfile.avatar_decoration,
+        },
+      });
+    }
 
     initBuildVersion().catch(() => {});
 

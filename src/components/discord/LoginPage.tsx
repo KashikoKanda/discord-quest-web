@@ -179,7 +179,25 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tokenInput.trim(), proxyCountry, platform }),
+        // Gửi kèm kết quả quét để server KHÔNG gửi token tới Discord lần nữa:
+        // login đi từ IP mạng thật của máy, không qua proxy.
+        body: JSON.stringify({
+          token: tokenInput.trim(),
+          proxyCountry,
+          platform,
+          clientVerified: !!preview,
+          profile: preview
+            ? {
+                id: preview.id,
+                username: preview.username,
+                global_name: preview.global_name,
+                discriminator: preview.discriminator,
+                avatar: preview.avatar,
+                locale: preview.locale,
+                verified: preview.verified,
+              }
+            : undefined,
+        }),
         signal: AbortSignal.timeout(120000),
       });
       let data: any;
