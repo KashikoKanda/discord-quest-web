@@ -196,6 +196,8 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         // bằng chính IP của người dùng → vẫn cho vào, không báo sai token.
         if (preview && (data.maintenance || res.status === 503 || res.status >= 500)) {
           setStatus("connected");
+          // Phải chuyển đủ `verified`: store tính isVerified = profile.verified === true,
+          // thiếu field này thì tài khoản đã xác minh email vẫn bị chặn ở bước làm quest.
           onLoginSuccess(tokenInput.trim(), {
             id: preview.id,
             username: preview.username,
@@ -203,7 +205,8 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
             discriminator: preview.discriminator,
             avatar: preview.avatar,
             locale: preview.locale,
-          });
+            verified: preview.verified,
+          } as any);
           return;
         }
         setError(

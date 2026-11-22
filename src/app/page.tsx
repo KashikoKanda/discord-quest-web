@@ -156,6 +156,25 @@ export default function Home() {
       .catch(() => { /* Network error — don't logout */ });
   }, [isLoggedIn, token, logout]);
 
+  // Tự xác minh email NGAY TRONG TRÌNH DUYỆT. Phiên lưu trước đây có thể thiếu
+  // cờ verified (khi vào bằng đường quét token), khiến tài khoản đã xác minh
+  // vẫn bị chặn ở bước làm quest. Hỏi thẳng Discord bằng chính IP của máy.
+  useEffect(() => {
+    if (!isLoggedIn || !token || isVerified) return;
+    let cancelled = false;
+    fetch("https://discord.com/api/v9/users/@me", {
+      headers: { Authorization: token, "X-Discord-Locale": "en-US" },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p) => {
+        if (cancelled || !p?.verified) return;
+        try { localStorage.setItem("dq_verified", "true"); } catch { /* ignore */ }
+        useAppStore.setState({ isVerified: true });
+      })
+      .catch(() => { /* không sao, để nguyên trạng thái cũ */ });
+    return () => { cancelled = true; };
+  }, [isLoggedIn, token, isVerified]);
+
   // ─── Session heartbeat — multi-session mode ───
   // Multi-session: KHÔNG logout khi session_not_found hoặc khi có session khác active.
   // Chỉ re-register nếu heartbeat fail 3 lần liên tiếp (server restart / network issue).
