@@ -243,6 +243,16 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     }
   };
 
+  // Tự xem trước mỗi khi token thay đổi (debounce 700ms) — không cần bấm nút.
+  useEffect(() => {
+    const t = tokenInput.trim();
+    if (t.length < 20) { setPreview(null); setPreviewError(""); setPreviewing(false); return; }
+    setPreviewing(true);
+    const id = setTimeout(() => { void previewToken(); }, 700);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenInput]);
+
   const pasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -318,9 +328,13 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       </div>
 
-      {(preview || previewError) && (
+      {(preview || previewError || previewing || tokenLen >= 20) && (
         <div className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 animate-scale-in">
-          {previewError ? (
+          {previewing && !preview ? (
+            <p className="text-[12px] text-white/50 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />Đang kiểm tra token...
+            </p>
+          ) : previewError ? (
             <p className="text-[12px] text-[#F5B544] flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{previewError}
             </p>
@@ -348,7 +362,21 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
               </div>
             </div>
           )}
-          <p className="text-[9px] text-white/25 mt-2">Chỉ xem trước, chưa đăng nhập{preview?.locale ? ` · locale ${preview.locale}` : ""}</p>
+          {preview ? (
+            <button
+              type="button"
+              onClick={() => { void handleLogin(); }}
+              disabled={isLoading}
+              className="mt-3 w-full h-10 rounded-lg flex items-center justify-center gap-2 text-[13px] font-semibold text-white bg-gradient-to-r from-[#5865F2] to-[#7C6BFF] hover:brightness-110 active:scale-[0.99] transition-all duration-200 disabled:opacity-50"
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+              {isLoading ? "Đang đăng nhập..." : "Đăng nhập"}
+            </button>
+          ) : (
+            <p className="text-[9px] text-white/25 mt-2">
+              {previewing ? "Đang xem trước token..." : "Chưa xác thực được token, chưa thể đăng nhập"}
+            </p>
+          )}
         </div>
       )}
 
