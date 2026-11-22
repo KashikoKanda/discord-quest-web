@@ -222,34 +222,30 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const ccFlag = (cc: string) =>
     /^[A-Za-z]{2}$/.test(cc) ? String.fromCodePoint(...cc.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0))) : "🌐";
 
-  const previewToken = async () => {
-    const t = tokenInput.trim();
-    if (!t) { setPreviewError("Dán token trước đã"); return; }
-    setPreviewing(true); setPreviewError(""); setPreview(null);
-    try {
-      const res = await fetch("/api/auth/preview", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }),
-      });
-      const data = await res.json();
-      if (data?.success && data.account) {
-        setPreview({ ...data.account, country: data.country || null });
-      } else {
-        setPreviewError(data?.error || "Không xem trước được");
-      }
-    } catch {
-      setPreviewError("Lỗi kết nối");
-    } finally {
-      setPreviewing(false);
-    }
-  };
 
-  // Tự xem trước mỗi khi token thay đổi (debounce 700ms) — không cần bấm nút.
+  // Tự quét mỗi khi token thay đổi (debounce 700ms) — không có nút bấm nào cả.
   useEffect(() => {
     const t = tokenInput.trim();
     if (t.length < 20) { setPreview(null); setPreviewError(""); setPreviewing(false); return; }
+    setPreview(null); setPreviewError("");
     setPreviewing(true);
-    const id = setTimeout(() => { void previewToken(); }, 700);
-    return () => clearTimeout(id);
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/auth/preview", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (data?.success && data.account) setPreview({ ...data.account, country: data.country || null });
+        else setPreviewError(data?.error || "Token không hợp lệ");
+      } catch {
+        if (!cancelled) setPreviewError("Không kết nối được máy chủ");
+      } finally {
+        if (!cancelled) setPreviewing(false);
+      }
+    }, 700);
+    return () => { cancelled = true; clearTimeout(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenInput]);
 
@@ -274,15 +270,6 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
           }`}>
             {tokenLen > 0 ? `${tokenLen} ký tự` : "chưa nhập"}
           </span>
-          <button
-            type="button"
-            onClick={previewToken}
-            disabled={previewing || isLoading || tokenLen === 0}
-            className="h-6 px-2 rounded-md text-[10px] font-semibold text-white/55 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] transition-all duration-200 disabled:opacity-35 flex items-center gap-1"
-          >
-            {previewing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-            {previewing ? "Đang xem" : "Xem trước"}
-          </button>
         </div>
       </div>
 
@@ -328,8 +315,9 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       </div>
 
-      {(preview || previewError || previewing || tokenLen >= 20) && (
-        <div className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 animate-scale-in">
+      <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${tokenLen >= 20 ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="overflow-hidden">
+        <div className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.04] p-3">
           {previewing && !preview ? (
             <p className="text-[12px] text-white/50 flex items-center gap-2">
               <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />Đang kiểm tra token...
@@ -362,23 +350,14 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
               </div>
             </div>
           )}
-          {preview ? (
-            <button
-              type="button"
-              onClick={() => { void handleLogin(); }}
-              disabled={isLoading}
-              className="mt-3 w-full h-10 rounded-lg flex items-center justify-center gap-2 text-[13px] font-semibold text-white bg-gradient-to-r from-[#5865F2] to-[#7C6BFF] hover:brightness-110 active:scale-[0.99] transition-all duration-200 disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {isLoading ? "Đang đăng nhập..." : "Đăng nhập"}
-            </button>
-          ) : (
+          {!preview && (
             <p className="text-[9px] text-white/25 mt-2">
-              {previewing ? "Đang xem trước token..." : "Chưa xác thực được token, chưa thể đăng nhập"}
+              {previewing ? "Đang quét token..." : "Token chưa hợp lệ, chưa thể đăng nhập"}
             </p>
           )}
         </div>
-      )}
+        </div>
+      </div>
 
       {error && (
         <div className="mb-3 flex items-start gap-2 p-2.5 rounded-xl bg-[#F6606F]/[0.08] border border-[#F6606F]/20 text-[#F6606F] text-xs animate-lp-shake">
@@ -387,6 +366,8 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       )}
 
+      <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${preview ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"}`}>
+      <div className="overflow-hidden">
       <Button
         onClick={handleLogin}
         disabled={isLoading || !tokenInput.trim()}
@@ -415,6 +396,9 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
           <span className="lp-progress"><span /></span>
         )}
       </Button>
+
+      </div>
+      </div>
 
       <div className="mt-4 flex items-center justify-center gap-1.5 text-[10.5px] text-white/30">
         <Lock className="w-3 h-3" />
