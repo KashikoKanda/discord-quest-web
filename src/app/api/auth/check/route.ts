@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discordFetch, isTokenExpiredResponse } from "@/lib/discord";
 import { db } from "@/lib/db";
-import { normalizeToken, checkDiscordToken } from "@/lib/tokenCheck";
+import { normalizeToken } from "@/lib/tokenCheck";
 import { rotateStickyProxy } from "@/lib/proxyHelper";
 
 /**
@@ -27,11 +27,19 @@ export async function POST(request: NextRequest) {
       // 401 qua proxy CHƯA đủ để kết luận token chết: IP proxy có thể đang bị
       // Discord gắn cờ. Xác nhận lại một lần trực tiếp (IP server); token sống
       // thì chỉ cần đổi proxy, không xoá gì của user.
-      const verdict = await checkDiscordToken(cleanToken);
-      if (verdict.kind === "user") {
-        await rotateStickyProxy(tokenId);
-        console.warn(`[Auth Check] 401 qua proxy nhưng token vẫn sống → đổi proxy cho ${tokenId.slice(0, 12)}`);
-        return NextResponse.json({ alive: true, userId: (verdict.profile as { id?: string })?.id });
+      // TUYỆT ĐỐI không xác nhận trực tiếp từ IP Render: token đang sống mà bị
+      // gọi từ IP datacenter khác nước là đúng mẫu "phiên bị đánh cắp" và Discord
+      // thu hồi token thật. Thay vào đó đổi sang proxy khác rồi thử lại qua proxy.
+      await rotateStickyProxy(tokenId);
+      const retry = await discordFetch(cleanToken, "/users/@me", {}, tokenId);
+      if (retry.ok) {
+        console.warn(`[Auth Check] 401 qua proxy cũ, đổi proxy mới → sống lại cho ${tokenId.slice(0, 12)}`);
+        const profile = await retry.json().catch(() => null);
+        return NextResponse.json({ alive: true, userId: (profile as { id?: string })?.id });
+      }
+      if (!isTokenExpiredResponse(retry)) {
+        // Lỗi mạng/5xx: không kết luận token chết
+        return NextResponse.json({ alive: true, degraded: true });
       }
 
       // Token dead — clean up DB
