@@ -711,10 +711,20 @@ export default function HiddenQuests() {
     if (existingIds.size > 0) return existingIds; // Already loaded
     if (!token) return existingIds; // No token, can't fetch
     try {
+      // Trình duyệt tự tải danh sách quest rồi gửi kèm: server chỉ định dạng,
+      // KHÔNG gọi Discord bằng token nữa (đó là thứ làm revoke khi mở quest ẩn).
+      let clientQuests: unknown = null;
+      try {
+        const raw = await fetch("https://discord.com/api/v9/quests/@me", {
+          headers: { Authorization: token },
+          cache: "no-store",
+        });
+        if (raw.ok) clientQuests = await raw.json();
+      } catch { /* để server tải hộ */ }
       const res = await fetch("/api/quests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, isVerified, autoClaim: isVerified }),
+        body: JSON.stringify({ token, isVerified, autoClaim: isVerified, clientQuests }),
       });
       const data = await res.json();
       if (data.success && data.quests) {
@@ -989,9 +999,9 @@ export default function HiddenQuests() {
     if (guildInfoFetched.current) return;
     if (!guildIcon && !guildName) {
       guildInfoFetched.current = true;
-      const url = token
-        ? `/api/guild/info?token=${encodeURIComponent(token)}`
-        : "/api/guild/info";
+      // KHÔNG gửi token lên server nữa: tên/icon guild đã có từ bước kiểm tra
+      // thành viên chạy trong trình duyệt (users/@me/guilds).
+      const url = "/api/guild/info";
       fetch(url)
         .then((res) => res.json())
         .then((data) => {
@@ -1062,21 +1072,9 @@ export default function HiddenQuests() {
           /* im lặng */
         }
       }
-      if (!decided) {
-        try {
-          const res = await fetch("/api/auth/guild-check", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token }),
-          });
-          const data = res.ok ? await res.json() : null;
-          if (data && data.isMember !== undefined) {
-            setGuildMember(data.isMember, data.guildName, data.guildIcon);
-          }
-        } catch {
-          /* im lặng */
-        }
-      }
+      // KHÔNG còn fallback qua /api/auth/guild-check: endpoint đó để server gọi
+      // Discord bằng token từ proxy, tạo cảnh "cùng token hai client" và Discord
+      // thu hồi ngay khi mở trang quest ẩn. Không xác định được thì giữ nguyên.
       // Không xác định được thì GIỮ NGUYÊN trạng thái cũ, tránh nháy khoá oan.
       setGuildCheckLoading(false);
       setChecking(false);
