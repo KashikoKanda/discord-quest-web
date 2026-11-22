@@ -19,6 +19,15 @@ export async function POST(request: NextRequest) {
 
     // Đi qua proxy đã ghim của token: gọi trực tiếp từ IP Render trong khi phiên
     // đang chạy qua proxy khiến Discord trả 401 và web xoá token oan ("bị thu hồi").
+    // KHÔNG gọi Discord từ server nữa (owner: "mình bị ngay sau login").
+    // Trình duyệt đã tự xác thực token bằng IP thật ở bước quét; nếu server
+    // gọi thêm /users/@me bằng fingerprint + proxy riêng thì cùng một token
+    // xuất hiện ở hai client/IP trong vài giây — đúng mẫu Discord thu hồi.
+    // Vì vậy endpoint này chỉ xác nhận phiên còn mở, không gửi request nào
+    // mang token đi.
+    return NextResponse.json({ alive: true, clientVerified: true });
+
+    // eslint-disable-next-line no-unreachable
     const cleanToken = normalizeToken(token);
     const tokenId = `t_${cleanToken.slice(0, 16)}`;
     const res = await discordFetch(cleanToken, "/users/@me", {}, tokenId);

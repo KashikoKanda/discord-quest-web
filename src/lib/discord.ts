@@ -270,7 +270,10 @@ function generateFingerprintData(tokenId: string): Omit<TokenFingerprint, "userA
   // Proxy hiện là VN nên ưu tiên hồ sơ vi-VN (IP VN + locale VN + Asia/Saigon mới
   // là tổ hợp thật); phần còn lại vẫn deterministic theo token.
   const profiles = FINGERPRINT_LOCALE_PROFILES;
-  const profile = rand() < 0.6 ? profiles[0] : profiles[Math.floor(rand() * profiles.length)];
+  // LUÔN dùng hồ sơ Việt Nam: owner ở VN, proxy cũng VN. Trước đây 40% token
+  // bốc ngẫu nhiên hồ sơ khác (de-DE/Europe/Berlin...) nên ngay sau login
+  // Discord thấy một client Việt Nam rồi một client Đức cùng token → thu hồi.
+  const profile = profiles[0];
 
   return {
     launchId: randomUUID(),

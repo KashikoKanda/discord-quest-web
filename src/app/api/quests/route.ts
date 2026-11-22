@@ -152,7 +152,9 @@ export async function POST(request: NextRequest) {
     });
 
     // Fetch orbs balance from Discord
-    const orbsBalance = await getVirtualCurrencyBalance(token, tokenId);
+    // Chỉ hỏi số dư orbs từ server khi KHÔNG có danh sách do trình duyệt tải;
+    // có clientQuests nghĩa là mọi request mang token phải đi từ IP người dùng.
+    const orbsBalance = cq && Array.isArray(cq.quests) ? null : await getVirtualCurrencyBalance(token, tokenId);
 
     // Extract excluded quest IDs (quests hidden by Discord, e.g. 18+ restricted)
     const excludedQuestIds = excludedQuests.map((q: Record<string, unknown>) => q.id as string).filter(Boolean);
