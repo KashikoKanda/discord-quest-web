@@ -5,6 +5,7 @@ const QUESTS_PAUSED = true;
 
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL } from "@/lib/guildConfig";
+import { checkGuildMembership } from "@/lib/guildCheck";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MotionSection } from "@/components/discord/MotionSection";
@@ -124,6 +125,25 @@ export default function Dashboard() {
     addLog, setSidebarOpen, logout, setGuildMember, setGuildCheckLoading,
     multiQuestEnabled,
   } = useAppStore();
+
+  // Kiểm tra guild NGAY KHI VÀO DASHBOARD (owner: "nên check guild khi vào dashboard").
+  // Nhờ vậy trạng thái thành viên có sẵn trước khi mở trang Quest ẩn, không bị nháy.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    const st = useAppStore.getState();
+    st.setGuildCheckLoading(true);
+    checkGuildMembership(token)
+      .then((res) => {
+        if (cancelled) return;
+        if (res) useAppStore.getState().setGuildMember(res.member, res.name, res.icon);
+        useAppStore.getState().setGuildCheckLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) useAppStore.getState().setGuildCheckLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [token]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
