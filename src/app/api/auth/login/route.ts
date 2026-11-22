@@ -47,13 +47,18 @@ export async function POST(request: NextRequest) {
     // chỉ tạo phiên và trả hồ sơ nên không có request nào mang token đi từ IP
     // Render hay từ proxy.
     if (clientVerified === true && clientProfile && clientProfile.id) {
+      // tokenId phải tính TẠI ĐÂY: bản trước tham chiếu biến tokenId khai báo
+      // phía dưới nên ném "ReferenceError: Cannot access 'b' before
+      // initialization" (log Render 23:20:29), làm login 500 và rơi về đường
+      // proxy cũ — đúng lúc token bị 401.
+      const verifiedTokenId = tokenIdOf(token);
       const sid = clientSessionId || generateSessionId();
       try {
-        registerSession(tokenId, sid, request.headers.get("user-agent") || undefined);
+        registerSession(verifiedTokenId, sid, request.headers.get("user-agent") || undefined);
       } catch {
         /* registry chỉ để thống kê */
       }
-      console.log(`[Auth Login] ${tokenId} xác thực từ IP người dùng — server không gọi Discord, không proxy`);
+      console.log(`[Auth Login] ${verifiedTokenId} xác thực từ IP người dùng — server không gọi Discord, không proxy`);
       return NextResponse.json({
         success: true,
         clientVerified: true,
