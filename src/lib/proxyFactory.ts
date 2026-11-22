@@ -168,6 +168,17 @@ export async function getEphemeralProxy(country: string): Promise<FactoryProxy |
 }
 
 /** Thống kê nhẹ để nhìn được có đốt proxy vô ích không. */
+/** ProxyFactory có bật không (đã cấu hình API key). */
+export function isFactoryEnabled(): boolean {
+  return !!process.env.RF_API_TOKEN;
+}
+
+/** uid đã có proxy cho nước này chưa (đang còn hạn cache). */
+export function hasFactoryProxy(uid: string, country: string): boolean {
+  const hit = cache.get(`${uid}|${country.toUpperCase()}`);
+  return !!hit && hit.expiresAt > Date.now();
+}
+
 export function getFactoryStats() {
   return {
     ...stats,

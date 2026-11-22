@@ -10,6 +10,7 @@
  */
 
 import { findProxies, fetchProxyList, type ProxyEntry } from "./proxyList";
+import { isFactoryEnabled } from "./proxyFactory";
 
 // ──────────────────────────────────────────────────
 // Types
@@ -160,8 +161,12 @@ export async function checkAvailability(countryCode: string, tokenId?: string): 
   const cc = countryCode.toUpperCase();
   const matchingProxies = await findProxies(cc);
 
-  // No proxy exists for this country at all
+  // Pool tĩnh không có nước này → ProxyFactory tạo proxy đúng nước ngay khi
+  // người dùng bấm nhận, nên vẫn coi là khả dụng (không còn "Không khả dụng").
   if (matchingProxies.length === 0) {
+    if (isFactoryEnabled()) {
+      return { status: "available", freeSlots: MAX_TOKENS_PER_PROXY, totalSlots: MAX_TOKENS_PER_PROXY };
+    }
     return { status: "no_proxy", freeSlots: 0, totalSlots: 0 };
   }
 
