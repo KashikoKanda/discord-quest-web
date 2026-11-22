@@ -1253,18 +1253,18 @@ export default function LoginPage() {
               </div>
             )}
 
-            {maintenance ? (
-              <div className="rounded-xl border border-[#F5B544]/25 bg-[#F5B544]/[0.06] p-5 text-center">
-                <Loader2 className="w-5 h-5 text-[#F5B544] animate-spin mx-auto mb-3" />
-                <p className="text-[14px] font-semibold text-[#F5B544] mb-1.5">Hệ thống đang bảo trì</p>
-           <>
-              <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
-            </>    </div>
-            ) : (
-              <>
-                <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
-              </>
+            {/* Login chạy từ IP máy nên KHÔNG bị khoá bởi bảo trì proxy nữa.
+                Proxy hết dung lượng chỉ ảnh hưởng tải danh sách quest và nhận
+                quest ẩn, không ảnh hưởng việc đăng nhập. */}
+            {maintenance && (
+              <div className="mb-3 rounded-lg border border-[#F5B544]/25 bg-[#F5B544]/[0.06] px-3 py-2">
+                <p className="text-[11px] text-[#F5B544] leading-relaxed">
+                  Proxy đang tạm hết dung lượng. Đăng nhập vẫn bình thường, chỉ phần tải danh sách quest và nhận quest ẩn là có thể lỗi.
+                </p>
+              </div>
             )}
+
+            <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
 
           </div>
         </div>
