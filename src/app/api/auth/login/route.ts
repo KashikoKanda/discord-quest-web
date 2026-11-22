@@ -5,6 +5,7 @@ import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure, proxyAuthBlockedFor } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders, sessionUAFromFingerprint } from "@/lib/uaPool";
+import { isWebIdentity, webHeaders } from "@/lib/webIdentity";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getEphemeralProxy } from "@/lib/proxyFactory";
 import { addTransientProxy } from "@/lib/proxyList";
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
       : pickSessionUA();
     const loginHeaders: Record<string, string> = {
       ...buildDiscordHeaders(uaSession.ua, uaSession.superProps),
+      ...(isWebIdentity() ? webHeaders() : {}),
       Authorization: cleanToken,
     };
     const sessionUserAgent = uaSession.ua.userAgent;

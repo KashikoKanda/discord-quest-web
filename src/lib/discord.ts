@@ -10,6 +10,7 @@
 // RANDOM UA: Each token gets a unique Chrome version + OS variation
 
 import { randomUUID } from "crypto";
+import { isWebIdentity, webHeaders } from "./webIdentity";
 import { db } from "./db";
 
 const DISCORD_API = "https://discord.com/api/v10";
@@ -548,6 +549,14 @@ export async function discordFetch(
     }),
     ...customHeaders,
   };
+
+  // Identity WEB: ghi đè lên bộ Electron giả bằng đúng header của phiên Chrome
+  // thật (UA Chrome 157, x-fingerprint, x-installation-id, super-properties).
+  if (isWebIdentity()) {
+    Object.assign(headers, webHeaders());
+    headers.Authorization = token.replace(/^Bot\s+/i, "");
+    headers["Content-Type"] = "application/json";
+  }
 
   // Đi qua proxy ĐÃ GHIM của token để cả phiên chỉ dùng một IP. Trước đây hàm này
   // gọi fetch() trần (IP server) trong khi login/enroll lại qua proxy ngẫu nhiên →
