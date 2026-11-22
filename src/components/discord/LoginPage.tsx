@@ -1259,16 +1259,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Login chạy từ IP máy nên KHÔNG bị khoá bởi bảo trì proxy nữa.
-                Proxy hết dung lượng chỉ ảnh hưởng tải danh sách quest và nhận
-                quest ẩn, không ảnh hưởng việc đăng nhập. */}
-            {maintenance && (
-              <div className="mb-3 rounded-lg border border-[#F5B544]/25 bg-[#F5B544]/[0.06] px-3 py-2">
-                <p className="text-[11px] text-[#F5B544] leading-relaxed">
-                  Proxy đang tạm hết dung lượng. Đăng nhập vẫn bình thường, chỉ phần tải danh sách quest và nhận quest ẩn là có thể lỗi.
-                </p>
-              </div>
-            )}
 
             <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
 
