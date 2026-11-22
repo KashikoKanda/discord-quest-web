@@ -1,7 +1,7 @@
 "use client";
 // Tạm đóng xử lý quest theo yêu cầu owner (đang chỉnh identity/proxy).
 // Đổi thành false để bật lại.
-const QUESTS_PAUSED = true;
+const QUESTS_PAUSED = false;
 
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL } from "@/lib/guildConfig";
@@ -503,7 +503,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="relative flex-1 text-left min-w-0">
-                      <p className="text-display text-lg sm:text-xl text-white truncate">Tạm đóng làm quest</p>
+                      <p className="text-display text-lg sm:text-xl text-white truncate">Bắt đầu làm Quest</p>
                       <p className="text-[11px] text-white/40 mt-0.5 hidden sm:block">
                         {available > 0 ? `${available} quest sẵn sàng` : "Không có quest mới"}
                       </p>
