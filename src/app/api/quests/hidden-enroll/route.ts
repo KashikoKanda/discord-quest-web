@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { QuestWorker } from "@/lib/questWorker";
 import { assignProxy } from "@/lib/proxyPool";
 import { getOrCreateProxy } from "@/lib/proxyFactory";
-import { getStickyProxy, bindStickyProxy } from "@/lib/proxyHelper";
+import { getStickyProxy } from "@/lib/proxyHelper";
 import { buildSuperProperties } from "@/lib/discord";
 import { isGatewayReady, getSuperProperties, getUserAgent } from "@/lib/gateway";
 import https from "node:https";
@@ -143,15 +143,13 @@ export async function POST(request: NextRequest) {
 
     const tokenId = tokenIdOf(token);
 
-    // Đổi vùng giống VPN: owner yêu cầu KHÔNG bắt đăng nhập lại token, chỉ cần
-    // đổi IP. Nên thay vì chặn 409, ta ghim luôn proxy nước của quest làm proxy
-    // của token → MỌI request sau đó (REST, enroll, worker) đi đúng MỘT IP mới,
-    // không còn cảnh VN và ID/PL cùng lúc cho một token (đó mới là thứ khiến
-    // Discord thu hồi ở log 03:00:11 → 03:00:19).
+    // QUY TẮC CỨNG: proxy của quest ẩn CHỈ dùng cho đúng request enroll, không
+    // ghim lại làm proxy của token. Token giữ nguyên proxy riêng của uid
+    // (sticky 24h, mỗi UID một proxy); sau khi enroll xong là quay về proxy cũ.
     const wantCountry = String(countryCode).toUpperCase();
     const sessionBefore = (getStickyProxy(tokenId)?.countryCode || "").toUpperCase();
     if (sessionBefore && wantCountry && sessionBefore !== wantCountry) {
-      console.log(`[HiddenEnroll] Đổi vùng ${sessionBefore} → ${wantCountry} cho ${tokenId.slice(0, 12)} (giữ nguyên token, không đăng nhập lại)`);
+      console.log(`[HiddenEnroll] Quest ${wantCountry}: chỉ dùng proxy ${wantCountry} cho request enroll, token vẫn ở ${sessionBefore}`);
     }
 
     QuestWorker.registerToken(tokenId, token);
@@ -174,8 +172,6 @@ export async function POST(request: NextRequest) {
     if (factory) {
       proxy = factory.entry;
       console.log(`[HiddenEnroll] ProxyFactory → ${factory.country} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
-      // Ghim ngay: từ giây này token chỉ đi qua IP của nước quest.
-      bindStickyProxy(tokenId, proxy as never);
     } else {
       const assignResult = await assignProxy(tokenId, countryCode);
       if (assignResult.ok) {
