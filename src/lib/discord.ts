@@ -592,7 +592,25 @@ export async function verifyDiscordToken(token: string) {
  * Throws if quest enrollment is blocked
  */
 export async function fetchDiscordQuests(token: string, tokenId?: string) {
-  const res = await discordFetch(token, "/quests/@me", {}, tokenId);
+  let res = await discordFetch(token, "/quests/@me", {}, tokenId);
+  // XEM danh sách quest không cần proxy. Owner chốt: "quest ẩn có thể dùng ip
+  // render để xem ... chỉ có nhận quest ẩn vẫn giữ nguyên". Vì vậy khi proxy
+  // hết dung lượng (407/5xx) thì đọc danh sách trực tiếp bằng IP Render để
+  // dashboard và quest ẩn vẫn hiện; riêng hidden-enroll vẫn bắt buộc proxy.
+  if (!res.ok && (res.status === 407 || res.status === 429 || res.status >= 500)) {
+    try {
+      const direct = await fetch(`${DISCORD_API}/quests/@me`, {
+        headers: { ...webHeaders(undefined, tokenId), Authorization: token },
+        cache: "no-store",
+      });
+      if (direct.ok) {
+        console.log(`[Quests] proxy lỗi ${res.status} → đọc danh sách trực tiếp bằng IP Render`);
+        res = direct;
+      }
+    } catch {
+      /* giữ nguyên lỗi proxy */
+    }
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to fetch quests: ${res.status} ${text}`);

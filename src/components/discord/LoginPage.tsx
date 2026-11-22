@@ -161,6 +161,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");  // "connecting" | "connected" | ""
   const [pasted, setPasted] = useState(false);
+  const [loginIp, setLoginIp] = useState<string | null>(null);
   const [preview, setPreview] = useState<null | { id: string; username: string; global_name: string | null; discriminator: string; avatar: string | null; locale: string | null; verified: boolean; country: string | null }>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -264,6 +265,11 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         if (local.ok && local.profile) {
           setPreview({ ...local.profile, country: null } as never);
           setPreviewError("");
+          // Lấy IP thật đang dùng để đăng nhập (thay cho ô "Quốc gia").
+          fetch("https://api.ipify.org?format=json", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((j) => { if (!cancelled && j?.ip) setLoginIp(String(j.ip)); })
+            .catch(() => { /* không lấy được thì để trống */ });
           return;
         }
         if (local.status === 0) {
@@ -388,8 +394,8 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
                 </p>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-[13px] leading-none">{preview.country ? ccFlag(preview.country) : "🌐"}</p>
-                <p className="text-[9px] text-white/30 mt-1 uppercase tracking-wide">{preview.country || "không rõ"}</p>
+                <p className="text-[11px] leading-none font-mono text-white/80">{loginIp || "..."}</p>
+                <p className="text-[9px] text-white/30 mt-1 uppercase tracking-wide">IP đăng nhập</p>
               </div>
             </div>
           )}
