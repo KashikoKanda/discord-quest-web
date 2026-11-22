@@ -40,6 +40,28 @@ const inflight = new Map<string, Promise<FactoryProxy | null>>();
 
 const stats = { created: 0, reused: 0, failed: 0 };
 
+/**
+ * Mã quốc gia phải là ISO 3166-1 alpha-2. Discord và quest đôi khi trả mã cũ
+ * hoặc tên viết tắt, ví dụ "UK" — ResiFactory trả 422 invalid_country cho UK và
+ * yêu cầu "gb". Chuẩn hoá trước khi gọi API, đây chính là lý do quest ẩn vùng
+ * Anh báo "Không thể tạo proxy cho UK".
+ */
+const COUNTRY_ALIASES: Record<string, string> = {
+  UK: "GB",
+  GB: "GB",
+  EL: "GR",
+  AN: "NL",
+  XK: "RS",
+  EU: "DE",
+};
+
+function normalizeCountry(country: string): string | null {
+  const raw = String(country || "").trim().toUpperCase();
+  if (!raw) return null;
+  const mapped = COUNTRY_ALIASES[raw] || raw;
+  return /^[A-Z]{2}$/.test(mapped) ? mapped : null;
+}
+
 function apiToken(): string | null {
   return process.env.RF_API_TOKEN || process.env.TOOLIP_API_TOKEN || null;
 }
@@ -51,7 +73,12 @@ async function createProxy(uid: string, country: string): Promise<FactoryProxy |
     console.warn("[ProxyFactory] Thiếu RF_API_TOKEN — bỏ qua tạo proxy.");
     return null;
   }
-  const cc = country.toUpperCase();
+  const cc = normalizeCountry(country);
+  if (!cc) {
+    console.warn(`[ProxyFactory] "${country}" không phải mã ISO 2 ký tự — bỏ qua.`);
+    stats.failed++;
+    return null;
+  }
   const body = JSON.stringify({
     pool: POOL,
     country: cc.toLowerCase(),
@@ -78,8 +105,15 @@ async function createProxy(uid: string, country: string): Promise<FactoryProxy |
         signal: ctrl.signal,
       });
       if (!res.ok) {
-        // 4xx là lỗi cấu hình/quốc gia/ví → thử lại cũng vô ích
-        console.warn(`[ProxyFactory] ${cc}: API trả ${res.status}, không thử lại.`);
+        // 4xx là lỗi cấu hình/quốc gia/ví → thử lại cũng vô ích, nhưng phải
+        // đọc body để biết lý do thật (invalid_country, ví hết, pool sai...).
+        const detail = await res.text().catch(() => "");
+        let why = detail.slice(0, 160);
+        try {
+          const j = JSON.parse(detail);
+          why = j?.error?.message || j?.message || why;
+        } catch { /* body không phải JSON */ }
+        console.warn(`[ProxyFactory] ${cc}: API trả ${res.status} — ${why}`);
         stats.failed++;
         return null;
       }
