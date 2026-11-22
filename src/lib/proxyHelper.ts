@@ -429,6 +429,15 @@ export async function fetchWithTokenProxy(
   url: string,
   options: RequestInit = {},
 ): Promise<Response> {
+  // PROXY_MODE=direct: token đi THẲNG từ IP server cho login + quest worker.
+  // Proxy chỉ còn dùng cho đúng request enroll quest ẩn (route hidden-enroll tự
+  // gọi proxiedRequest với proxy theo nước quest). Nhờ vậy không đốt GB proxy
+  // cho hàng trăm request video-progress mỗi lượt.
+  if (process.env.PROXY_MODE === "direct") {
+    const opts: Record<string, unknown> = { ...options, headersTimeout: 20_000, bodyTimeout: 20_000 };
+    return (typeof undiciFetch === "function" ? undiciFetch : fetch)(url, opts as never) as Promise<Response>;
+  }
+
   const allowDirect = process.env.DISABLE_DIRECT_FALLBACK !== "1";
 
   // Proxy đang bị gateway từ chối (407) → trả lỗi ngay, không mở đường hầm nào.
