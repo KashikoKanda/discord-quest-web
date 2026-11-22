@@ -1176,7 +1176,17 @@ export default function LoginPage() {
               )}
             </>    </div>
             ) : (
-<TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+              <>
+                <div className="mb-3 grid grid-cols-2 gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.07]">
+                  <button type="button" onClick={() => setLoginMode("email")} className={`h-9 rounded-lg text-[12px] font-medium transition-all duration-200 ${loginMode === "email" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"}`}>Email / Mật khẩu</button>
+                  <button type="button" onClick={() => setLoginMode("token")} className={`h-9 rounded-lg text-[12px] font-medium transition-all duration-200 ${loginMode === "token" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"}`}>Token</button>
+                </div>
+                {loginMode === "email" ? (
+                  <EmailLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} />
+                ) : (
+                  <TokenLogin onLoginSuccess={handleLoginSuccess} parentLoading={loginSuccess} proxyCountry={proxyCountry} />
+                )}
+              </>
             )}
 
           </div>
