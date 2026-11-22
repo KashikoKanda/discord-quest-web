@@ -166,10 +166,21 @@ export default function Dashboard() {
     if (!token) return;
     setLoading(true);
     try {
+      // Quest ở dashboard tải qua IP GỐC của máy (owner chốt 22/11/2026):
+      // trình duyệt gọi thẳng Discord, server chỉ định dạng lại dữ liệu.
+      let clientQuests: unknown = null;
+      try {
+        const raw = await fetch("https://discord.com/api/v9/quests/@me", {
+          headers: { Authorization: token },
+          cache: "no-store",
+        });
+        if (raw.ok) clientQuests = await raw.json();
+      } catch { /* bị chặn thì để server tải hộ */ }
+
       const res = await fetch("/api/quests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, isVerified }),
+        body: JSON.stringify({ token, isVerified, clientQuests }),
       });
       const data = await res.json();
       if (checkTokenExpired(res, data)) { setLoading(false); return; }

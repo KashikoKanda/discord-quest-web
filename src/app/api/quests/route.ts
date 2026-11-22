@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     token = typeof body?.token === "string" ? body.token : "";
-    const { isVerified, autoClaim } = body;
+    const { isVerified, autoClaim, clientQuests } = body;
 
     if (!token) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
@@ -50,7 +50,20 @@ export async function POST(request: NextRequest) {
     const tokenAutoClaim = autoClaim ?? true;
     QuestWorker.registerToken(tokenId, token, tokenVerified, tokenAutoClaim);
 
-    const { quests, excludedQuests } = await fetchDiscordQuests(token);
+    // Danh sách do TRÌNH DUYỆT tải bằng IP gốc thì dùng luôn, không gọi lại
+    // từ IP Render. Chỉ khi trình duyệt không tải được mới nhờ server.
+    let quests: Record<string, unknown>[] = [];
+    let excludedQuests: Record<string, unknown>[] = [];
+    const cq = clientQuests as { quests?: unknown; excluded_quests?: unknown } | null;
+    if (cq && Array.isArray(cq.quests)) {
+      quests = cq.quests as Record<string, unknown>[];
+      excludedQuests = Array.isArray(cq.excluded_quests) ? (cq.excluded_quests as Record<string, unknown>[]) : [];
+      console.log(`[Quests] ${quests.length} quest do trình duyệt tải (IP gốc)`);
+    } else {
+      const fetched = await fetchDiscordQuests(token);
+      quests = fetched.quests as Record<string, unknown>[];
+      excludedQuests = fetched.excludedQuests as Record<string, unknown>[];
+    }
     const workerProgress = QuestWorker.getAllQuestProgress(tokenId);
 
     const formatted = quests.map((q: Record<string, unknown>) => {

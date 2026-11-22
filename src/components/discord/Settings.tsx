@@ -172,11 +172,22 @@ export default function Settings() {
     workerStatus,
     orbsBalance,
   } = useAppStore();
+  useEffect(() => {
+    let cancelled = false;
+    fetch("https://api.ipify.org?format=json", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled && j?.ip) setClientIp(String(j.ip)); })
+      .catch(() => { /* im lặng */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const [fullProfile, setFullProfile] = useState<FullProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [copied, setCopied] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // IP hiện tại của máy đang dùng (IP gốc), hiện trong thẻ thông tin tài khoản
+  const [clientIp, setClientIp] = useState<string | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [autoQuestToggling, setAutoQuestToggling] = useState(false);
   // ─── Nitro purchase button: click → buy → nếu thành công → khóa 2s (countdown) → được ấn tiếp
@@ -522,7 +533,7 @@ export default function Settings() {
                 <InfoRow icon={<User className="w-3.5 h-3.5" />} label="Tên" value={profile?.username} mono />
                 <InfoRow icon={<User className="w-3.5 h-3.5" />} label="Hiển thị" value={profile?.global_name || profile?.username} />
                 <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label="Ngày tạo" value={profile?.id ? formatSnowflakeDate(profile.id) : undefined} />
-                <InfoRow icon={<Globe className="w-3.5 h-3.5" />} label="Quốc gia" value={profile?.store_country || "—"} mono />
+                <InfoRow icon={<Globe className="w-3.5 h-3.5" />} label="IP hiện tại" value={clientIp || "..."} mono />
                 <InfoRow icon={<Mail className="w-3.5 h-3.5" />} label="Email" value={profile?.email || (isVerified ? "—" : "Chưa xác minh")} valueClass={isVerified ? "text-white" : "text-[#F6606F]"} />
 
                 {!isVerified && (
