@@ -48,6 +48,19 @@ export function getElectronPairs(): Array<{ electron: string; chrome: string }> 
   return ELECTRON_CHROMIUM_PAIRS;
 }
 
+/**
+ * Hồ sơ locale THẬT: locale + Accept-Language + timezone luôn đi cùng nhau.
+ * Khai báo tại chỗ thay vì import từ uaPool vì uaPool đã import discord (vòng).
+ */
+const FINGERPRINT_LOCALE_PROFILES: Array<{ locale: string; timezone: string }> = [
+  { locale: "vi-VN", timezone: "Asia/Saigon" },
+  { locale: "en-US", timezone: "America/New_York" },
+  { locale: "en-GB", timezone: "Europe/London" },
+  { locale: "ja-JP", timezone: "Asia/Tokyo" },
+  { locale: "fr-FR", timezone: "Europe/Paris" },
+  { locale: "de-DE", timezone: "Europe/Berlin" },
+];
+
 // OS version pool — mix of Windows 10/11 variants (most common in real traffic)
 export const OS_VERSIONS = [
   "10.0.19045", // Windows 10 22H2 (most common Win10)
@@ -57,8 +70,6 @@ export const OS_VERSIONS = [
 ];
 
 // Discord's client_country / Accept-Language values to match real users
-const LOCALES = ["en-US", "en-GB", "vi-VN", "ja-JP", "ko-KR", "de-DE", "fr-FR", "pt-BR", "es-ES", "zh-CN"];
-const TIMEZONES = ["Asia/Saigon", "America/New_York", "America/Los_Angeles", "Europe/London", "Europe/Berlin", "Asia/Tokyo", "Asia/Seoul"];
 
 // ──────────────────────────────────────────────────
 // Auto-update build version from Discord
@@ -224,20 +235,50 @@ function buildUserAgent(chromeVersion: string, osVersion: string, electronVersio
   return `Mozilla/5.0 (Windows NT ${osVersion.split(".").slice(0, 2).join(".")}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/${CLIENT_VERSION} Chrome/${chromeVersion} Electron/${electronVersion} Safari/537.36`;
 }
 
-function generateFingerprintData(): Omit<TokenFingerprint, "userAgent"> & { userAgent: string } {
-  const pair = ELECTRON_CHROMIUM_PAIRS[Math.floor(Math.random() * ELECTRON_CHROMIUM_PAIRS.length)];
-  const chromeVersion = pair.chrome;
-  const osVersion = OS_VERSIONS[Math.floor(Math.random() * OS_VERSIONS.length)];
-  const userAgent = buildUserAgent(chromeVersion, osVersion, pair.electron);
+/**
+ * Bộ sinh số giả ngẫu nhiên DETERMINISTIC theo tokenId.
+ * Cùng một token → cùng một identity ở mọi lần tạo lại (kể cả sau deploy,
+ * khi DB SQLite trong /tmp bị xoá). Đây là điểm quan trọng: client thật không
+ * đổi UA/locale mỗi lần khởi động, còn trước đây mỗi lần mất DB là token lại
+ * khoác một bộ identity mới, Discord thấy lạ.
+ */
+function seededRandom(seedText: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seedText.length; i++) {
+    h ^= seedText.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return () => {
+    h += 0x6d2b79f5;
+    let r = Math.imul(h ^ (h >>> 15), 1 | h);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function generateFingerprintData(tokenId: string): Omit<TokenFingerprint, "userAgent"> & { userAgent: string } {
+  const rand = seededRandom(tokenId);
+  const pairs = ELECTRON_CHROMIUM_PAIRS;
+  const pair = pairs[Math.floor(rand() * pairs.length)];
+  const osVersion = OS_VERSIONS[Math.floor(rand() * OS_VERSIONS.length)];
+  const userAgent = buildUserAgent(pair.chrome, osVersion, pair.electron);
+
+  // locale + timezone PHẢI cùng một hồ sơ. Trước đây hai giá trị được bốc độc
+  // lập nên sinh ra tổ hợp không tồn tại trên đời (fr-FR + Asia/Seoul), và
+  // Accept-Language / x-discord-locale lại khai bộ thứ ba.
+  // Proxy hiện là VN nên ưu tiên hồ sơ vi-VN (IP VN + locale VN + Asia/Saigon mới
+  // là tổ hợp thật); phần còn lại vẫn deterministic theo token.
+  const profiles = FINGERPRINT_LOCALE_PROFILES;
+  const profile = rand() < 0.6 ? profiles[0] : profiles[Math.floor(rand() * profiles.length)];
 
   return {
     launchId: randomUUID(),
     launchSignature: randomUUID(),
     heartbeatSessionId: randomUUID(),
     sessionId: randomUUID(),
-    locale: LOCALES[Math.floor(Math.random() * LOCALES.length)],
-    timezone: TIMEZONES[Math.floor(Math.random() * TIMEZONES.length)],
-    chromeVersion,
+    locale: profile.locale,
+    timezone: profile.timezone,
+    chromeVersion: pair.chrome,
     userAgent,
     osVersion,
   };
@@ -313,7 +354,7 @@ export async function getOrCreateFingerprint(tokenId: string): Promise<TokenFing
   }
 
   // Create new fingerprint
-  const data = generateFingerprintData();
+  const data = generateFingerprintData(tokenId);
 
   try {
     await db.tokenFingerprint.create({
@@ -330,7 +371,7 @@ export async function getOrCreateFingerprint(tokenId: string): Promise<TokenFing
         osVersion: data.osVersion,
       },
     });
-    console.log(`[Discord] Created new fingerprint for token ${tokenId.slice(0, 12)}... Chrome/${data.chromeVersion} OS/${data.osVersion} locale/${data.locale}`);
+    console.log(`[Discord] Created new fingerprint for token ${tokenId.slice(0, 12)}... Electron/${data.userAgent.match(/Electron\/([\d.]+)/)?.[1] || "?"} Chrome/${data.chromeVersion} OS/${data.osVersion} locale/${data.locale} tz/${data.timezone}`);
   } catch (error) {
     // If create fails (e.g. tokenId doesn't exist in DiscordToken), still use in-memory
     console.warn(`[Discord] Could not save fingerprint to DB for ${tokenId}:`, error instanceof Error ? error.message : String(error));

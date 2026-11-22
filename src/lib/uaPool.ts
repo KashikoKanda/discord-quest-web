@@ -58,7 +58,7 @@ const SEC_CH_UA_BITNESS = ['"64"', '"32"'];
 
 // Locale profiles — locale, Accept-Language and timezone must agree.
 // A real browser never sends a vi-VN Accept-Language with an en-US system locale.
-const LOCALE_PROFILES: Array<{ locale: string; acceptLanguage: string; timezone: string }> = [
+export const LOCALE_PROFILES: Array<{ locale: string; acceptLanguage: string; timezone: string }> = [
   { locale: "en-US", acceptLanguage: "en-US,en;q=0.9", timezone: "America/New_York" },
   { locale: "en-US", acceptLanguage: "en-US,en;q=0.9,es;q=0.8", timezone: "America/Los_Angeles" },
   { locale: "en-GB", acceptLanguage: "en-GB,en;q=0.9,en-US;q=0.8", timezone: "Europe/London" },
