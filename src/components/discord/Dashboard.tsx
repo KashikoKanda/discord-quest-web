@@ -1,11 +1,12 @@
 "use client";
 // Tạm đóng xử lý quest theo yêu cầu owner (đang chỉnh identity/proxy).
 // Đổi thành false để bật lại.
-const QUESTS_PAUSED = true;
+const QUESTS_PAUSED = false;
 
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL } from "@/lib/guildConfig";
 import { checkGuildMembership } from "@/lib/guildCheck";
+import { startLocalEngine, isLocalEngineRunning, stopLocalEngine } from "@/lib/localQuestEngine";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MotionSection } from "@/components/discord/MotionSection";
@@ -292,12 +293,22 @@ export default function Dashboard() {
     }
     try {
       if (QUESTS_PAUSED) { addLog({ level: "warn", message: "Tạm đóng xử lý quest, sẽ bật lại sau." } as never); return; }
-      const res = await fetch("/api/quests/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, tokenId, isVerified, multiQuest: multiQuestEnabled }) });
-      const data = await res.json();
-      if (checkTokenExpired(res, data)) return;
-      if (data.success) { setWorkerStatus("running"); addLog({ level: "success", message: "Đã bắt đầu xử lý quest", timestamp: Date.now() }); }
-      else addLog({ level: "error", message: data.message || "Không thể bắt đầu", timestamp: Date.now() });
-    } catch (err: unknown) { addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }
+      if (isLocalEngineRunning()) {
+        addLog({ level: "warn", message: "Quest đang chạy trên máy bạn rồi", timestamp: Date.now() });
+        return;
+      }
+      // Owner chốt: xử lý quest chạy ở IP GỐC. Toàn bộ request enroll thường,
+      // video-progress, heartbeat, gateway presence và claim đi thẳng từ trình
+      // duyệt, không qua server, không tốn dung lượng proxy.
+      setWorkerStatus("running");
+      addLog({ level: "info", message: "Chạy quest từ IP mạng thật của máy bạn (không qua proxy)", timestamp: Date.now() });
+      await startLocalEngine(token, {
+        log: (level, message) => addLog({ level, message, timestamp: Date.now() }),
+        progress: (questId, progress, status) => updateQuestProgress(questId, progress, status as never),
+      }, { concurrency: multiQuestEnabled ? 3 : 1 });
+      setWorkerStatus("idle");
+      void refreshQuests();
+    } catch (err: unknown) { setWorkerStatus("idle"); addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }
   };
 
   const enrollQuestAction = async (questId: string) => {

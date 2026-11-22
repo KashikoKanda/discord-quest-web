@@ -10,6 +10,7 @@ import {
   Lock, Fingerprint, Globe,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { stopLocalEngine } from "@/lib/localQuestEngine";
 
 interface FullProfile {
   user: any;
@@ -358,6 +359,9 @@ export default function Settings() {
     setResetting(true);
     try {
       const tid = `t_${token.slice(0, 16)}`;
+      // Quest giờ chạy trong trình duyệt nên phải dừng engine tại đây,
+      // nếu không nó vẫn tiếp tục chạy dù server đã báo dừng.
+      stopLocalEngine();
       await fetch("/api/quests/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
