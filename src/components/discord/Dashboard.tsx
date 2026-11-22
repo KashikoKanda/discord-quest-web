@@ -251,22 +251,24 @@ export default function Dashboard() {
   const startQuests = async () => {
     if (!token) return;
     const avail = quests.filter((q) => q.status === "available" || q.status === "enrolled").length;
+    // Trước đây danh sách rỗng là lặng lẽ quay ra (chỉ phát tiếng cười) nên bấm
+    // nút trông như không phản hồi. Nay vẫn gọi server để server tự tải quest
+    // mới và báo rõ trên log, không chặn ở phía trình duyệt nữa.
     if (avail === 0) {
-      try {
-        const audio = new Audio("/laugh.mp3");
-        audio.volume = 1.0;
-        audio.play().catch(() => {});
-      } catch { /* ignore */ }
-      return;
+      addLog({ level: "warn", message: "Danh sách đang trống, nhờ server tải lại quest…", timestamp: Date.now() });
+      void refreshQuests();
     }
     try {
       if (QUESTS_PAUSED) { addLog({ level: "warn", message: "Tạm đóng xử lý quest, sẽ bật lại sau." } as never); return; }
+      // Phản hồi ngay trên giao diện, không để nút im lặng trong lúc chờ server.
+      setWorkerStatus("running");
+      addLog({ level: "info", message: "Đang gửi yêu cầu bắt đầu…", timestamp: Date.now() });
       const res = await fetch("/api/quests/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, tokenId, isVerified, multiQuest: multiQuestEnabled }) });
       const data = await res.json();
       if (checkTokenExpired(res, data)) return;
       if (data.success) { setWorkerStatus("running"); addLog({ level: "success", message: "Đã bắt đầu xử lý quest", timestamp: Date.now() }); }
-      else addLog({ level: "error", message: data.message || "Không thể bắt đầu", timestamp: Date.now() });
-    } catch (err: unknown) { addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }
+      else { setWorkerStatus("idle"); addLog({ level: "error", message: data.message || "Không thể bắt đầu", timestamp: Date.now() }); }
+    } catch (err: unknown) { setWorkerStatus("idle"); addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }
   };
 
   const enrollQuestAction = async (questId: string) => {
