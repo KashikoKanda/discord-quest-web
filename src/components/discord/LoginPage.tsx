@@ -163,6 +163,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const [preview, setPreview] = useState<null | { id: string; username: string; global_name: string | null; discriminator: string; avatar: string | null; locale: string | null; verified: boolean; country: string | null }>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [platform, setPlatform] = useState<"pc" | "android">("pc");
 
   const handleLogin = async () => {
     if (!tokenInput.trim()) { setError("Vui lòng nhập Discord token"); return; }
@@ -178,7 +179,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tokenInput.trim(), proxyCountry }),
+        body: JSON.stringify({ token: tokenInput.trim(), proxyCountry, platform }),
         signal: AbortSignal.timeout(120000),
       });
       let data: any;
@@ -365,6 +366,32 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
           <span className="leading-relaxed">{error}</span>
         </div>
       )}
+
+      <div className="mb-3">
+        <p className="text-[10px] text-white/35 mb-1.5">Token này lấy từ đâu?</p>
+        <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+          {([
+            { key: "pc", label: "PC (web)" },
+            { key: "android", label: "Android" },
+          ] as const).map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setPlatform(opt.key)}
+              className={`flex-1 h-9 rounded-lg text-[12px] font-medium transition-all duration-300 ${
+                platform === opt.key
+                  ? "bg-[linear-gradient(135deg,#5865F2_0%,#8B5CF6_100%)] text-white shadow-[0_8px_20px_-10px_rgba(109,91,246,0.9)]"
+                  : "text-white/45 hover:text-white/70"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[9px] text-white/25 mt-1.5">
+          Chọn đúng nơi tạo token: PC dùng Chrome Windows, Android dùng WebView Chrome 154.
+        </p>
+      </div>
 
       <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${preview ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"}`}>
       <div className="overflow-hidden">

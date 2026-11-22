@@ -5,7 +5,7 @@ import { pickLoginProxy, releaseProxy } from "@/lib/proxyPool";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure, proxyAuthBlockedFor } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders, sessionUAFromFingerprint } from "@/lib/uaPool";
-import { isWebIdentity, webHeaders, userIdFromToken } from "@/lib/webIdentity";
+import { isWebIdentity, webHeaders, userIdFromToken, setProfileForToken } from "@/lib/webIdentity";
 import { tokenIdOf } from "@/lib/tokenCheck";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getEphemeralProxy } from "@/lib/proxyFactory";
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { token, sessionId: clientSessionId, proxyCountry } = await request.json();
+    const { token, sessionId: clientSessionId, proxyCountry, platform } = await request.json();
 
     if (!token || typeof token !== "string") {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
@@ -51,6 +51,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
     }
     const tokenId = tokenIdOf(cleanToken);
+
+    // Owner chọn token này lấy từ đâu: Android hay PC. Ghim theo tokenId để
+    // mọi request sau đó (REST, quest, gateway) khai đúng một loại client.
+    if (platform === "android" || platform === "pc") {
+      setProfileForToken(tokenId, platform === "android" ? "android-app" : "pc-web");
+    }
     const userAgent = request.headers.get("user-agent") || undefined;
 
     initBuildVersion().catch(() => {});
@@ -65,7 +71,7 @@ export async function POST(request: NextRequest) {
       : pickSessionUA();
     const loginHeaders: Record<string, string> = {
       ...buildDiscordHeaders(uaSession.ua, uaSession.superProps),
-      ...(isWebIdentity() ? webHeaders(userIdFromToken(cleanToken)) : {}),
+      ...(isWebIdentity() ? webHeaders(userIdFromToken(cleanToken), tokenId) : {}),
       Authorization: cleanToken,
     };
     const sessionUserAgent = uaSession.ua.userAgent;

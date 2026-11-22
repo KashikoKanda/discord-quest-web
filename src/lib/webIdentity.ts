@@ -84,8 +84,33 @@ export function isWebIdentity(): boolean {
   return (process.env.IDENTITY_MODE || "web").toLowerCase() !== "electron";
 }
 
-/** IDENTITY_PROFILE_MAP="uid1:android,uid2:pc" — ghim profile cho từng account. */
-export function profileForUser(userId?: string | null): IdentityProfile {
+/** Profile đã chọn lúc đăng nhập, ghim theo tokenId cho cả phiên. */
+const TOKEN_PROFILES = new Map<string, IdentityProfile>();
+
+/** tokenId chuẩn hoá (bỏ nháy / Bot / Bearer) — khớp tokenIdOf(). */
+export function tokenIdFromToken(token: string): string {
+  const clean = (token || "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^(Bot|Bearer)\s+/i, "")
+    .trim();
+  return `t_${clean.slice(0, 16)}`;
+}
+
+export function setProfileForToken(tokenId: string, profile: IdentityProfile): void {
+  if (!tokenId) return;
+  TOKEN_PROFILES.set(tokenId, profile);
+  console.log(`[Identity] ${tokenId.slice(0, 12)} → profile ${profile}`);
+}
+
+export function getProfileForToken(tokenId?: string | null): IdentityProfile | null {
+  if (!tokenId) return null;
+  return TOKEN_PROFILES.get(tokenId) || null;
+}
+
+/** Thứ tự ưu tiên: chọn lúc đăng nhập → map theo uid → env → pc-web. */
+export function profileForUser(userId?: string | null, tokenId?: string | null): IdentityProfile {
+  const pinned = getProfileForToken(tokenId);
+  if (pinned) return pinned;
   const map = (process.env.IDENTITY_PROFILE_MAP || "").trim();
   if (map && userId) {
     for (const pair of map.split(",")) {
@@ -165,8 +190,8 @@ export function idsForUser(userId: string | null): {
 }
 
 /** x-super-properties: dùng blob thật trong env nếu có, không thì dựng khớp profile. */
-export function webSuperProps(userId?: string | null): string {
-  const profile = profileForUser(userId);
+export function webSuperProps(userId?: string | null, tokenId?: string | null): string {
+  const profile = profileForUser(userId, tokenId);
   const raw =
     profile === "android-app"
       ? process.env.X_SUPER_PROPERTIES_ANDROID || process.env.X_SUPER_PROPERTIES_2
@@ -198,8 +223,8 @@ export function webSuperProps(userId?: string | null): string {
   return Buffer.from(JSON.stringify(payload)).toString("base64");
 }
 
-export function webUserAgent(userId?: string | null): string {
-  return profileForUser(userId) === "android-app" ? ANDROID.ua : PC.ua;
+export function webUserAgent(userId?: string | null, tokenId?: string | null): string {
+  return profileForUser(userId, tokenId) === "android-app" ? ANDROID.ua : PC.ua;
 }
 export function webLocale(): string {
   return LOCALE;
@@ -207,20 +232,20 @@ export function webLocale(): string {
 export function webTimezone(): string {
   return TIMEZONE;
 }
-export function webChromeVersion(userId?: string | null): string {
-  return profileForUser(userId) === "android-app" ? ANDROID.chrome : PC.chrome;
+export function webChromeVersion(userId?: string | null, tokenId?: string | null): string {
+  return profileForUser(userId, tokenId) === "android-app" ? ANDROID.chrome : PC.chrome;
 }
 
 /** Bộ header identity, khớp 1:1 với capture của profile tương ứng. */
-export function webHeaders(userId?: string | null): Record<string, string> {
-  const profile = profileForUser(userId);
+export function webHeaders(userId?: string | null, tokenId?: string | null): Record<string, string> {
+  const profile = profileForUser(userId, tokenId);
   const base = profile === "android-app" ? ANDROID : PC;
   const ids = idsForUser(userId ?? null);
   const major = base.chrome.split(".")[0];
   const headers: Record<string, string> = {
     "User-Agent": base.ua,
     "Accept-Language": base.acceptLanguage,
-    "x-super-properties": webSuperProps(userId),
+    "x-super-properties": webSuperProps(userId, tokenId),
     "x-discord-locale": LOCALE,
     "x-discord-timezone": TIMEZONE,
     "x-installation-id": ids.installationId,
