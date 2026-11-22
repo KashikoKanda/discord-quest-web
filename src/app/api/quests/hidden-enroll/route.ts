@@ -149,8 +149,18 @@ export async function POST(request: NextRequest) {
     // (sticky 24h, mỗi UID một proxy); sau khi enroll xong là quay về proxy cũ.
     const wantCountry = String(countryCode).toUpperCase();
     const sessionBefore = (getStickyProxy(tokenId)?.countryCode || "").toUpperCase();
-    if (sessionBefore && wantCountry && sessionBefore !== wantCountry) {
-      console.log(`[HiddenEnroll] Quest ${wantCountry}: chỉ dùng proxy ${wantCountry} cho request enroll, token vẫn ở ${sessionBefore}`);
+    // Đổi vùng cho riêng request enroll = cùng một token xuất hiện ở 2 nước
+    // trong vài giây → Discord coi là phiên bị đánh cắp và thu hồi token.
+    // Log 22/11 07:40 UTC: token sống (login 200 hai lần) → enroll quest ES qua
+    // proxy ES → 401 → revoke. Vì vậy chặn mặc định.
+    const allowHop = process.env.ALLOW_REGION_HOP === "1";
+    if (sessionBefore && wantCountry && sessionBefore !== wantCountry && !allowHop) {
+      console.log(`[HiddenEnroll] CHẶN quest ${wantCountry}: phiên token đang ở ${sessionBefore} (bật ALLOW_REGION_HOP=1 để bỏ chặn)`);
+      return NextResponse.json({
+        success: false,
+        regionBlocked: true,
+        error: `Quest này khoá vùng ${wantCountry} nhưng phiên token của bạn đang ở ${sessionBefore}. Nhận quest khác vùng sẽ làm Discord thu hồi token nên mình chặn lại.`,
+      }, { status: 409 });
     }
 
     QuestWorker.registerToken(tokenId, token);
@@ -219,42 +229,15 @@ export async function POST(request: NextRequest) {
         warmupErr instanceof Error ? warmupErr.message : String(warmupErr));
     }
 
-    // Nếu proxy không ra được mạng → fallback trực tiếp
+    // Proxy không ra được mạng: KHÔNG gọi trực tiếp từ IP server. Request mang
+    // token đi từ IP datacenter khác nước là mẫu "phiên bị đánh cắp" và chính là
+    // thứ làm token bị thu hồi. Trả lỗi để người dùng thử lại sau.
     if (!proxyOk) {
-      console.log("[HiddenEnroll] Proxy không kết nối được, thử trực tiếp...");
-      const { discordFetch } = await import("@/lib/discord");
-      const body = JSON.stringify({
-        location: isMobile ? 12 : 11,
-        is_targeted: false,
-        metadata_sealed: null,
-        traffic_metadata_raw: (questData?.traffic_metadata_raw as string) || null,
-        traffic_metadata_sealed: (questData?.traffic_metadata_sealed as string) || null,
-      });
-
-      const directRes = await discordFetch(token, `/quests/${questId}/enroll`, {
-        method: "POST",
-        body,
-        headers: { AndroidRequest: isMobile ? "true" : "false" },
-      }, tokenId);
-
-      if (directRes.ok || directRes.status === 204) {
-        let enrollData: unknown = null;
-        try { enrollData = await directRes.json(); } catch {}
-        return NextResponse.json({
-          success: true,
-          message: `Đã nhận quest (kết nối trực tiếp — proxy không khả dụng)`,
-          proxyInfo: { country: proxy.countryCode || countryCode, ip: proxy.host, port: proxy.port },
-          enrollData,
-        });
-      }
-
-      const errText = await directRes.text().catch(() => "");
-      const directError = parseDiscordError(directRes.status, errText);
+      console.log("[HiddenEnroll] Proxy không kết nối được — dừng, không gọi trực tiếp");
       return NextResponse.json({
         success: false,
-        discordCode: directError.code,
-        error: directError.message,
-      });
+        error: "Proxy của quest đang không kết nối được. Thử lại sau ít phút.",
+      }, { status: 502 });
     }
 
     // 3. Build super-properties
@@ -333,34 +316,15 @@ export async function POST(request: NextRequest) {
     const discordError = parseDiscordError(res.statusCode, res.body);
     console.log(`[HiddenEnroll] Discord error: ${discordError.code} — ${discordError.message}`);
 
-    // Nếu lỗi do tài khoản không hợp lệ (401) — thử lại trực tiếp
+    // 401 qua proxy: KHÔNG thử lại trực tiếp từ IP server (chính request đó
+    // làm token chết). Trả lỗi để người dùng kiểm tra token/proxy.
     if (res.statusCode === 401) {
-      console.log(`[HiddenEnroll] 401 qua proxy, thử lại trực tiếp...`);
-      const { discordFetch } = await import("@/lib/discord");
-      const directRes = await discordFetch(token, `/quests/${questId}/enroll`, {
-        method: "POST",
-        body,
-        headers: { AndroidRequest: isMobile ? "true" : "false" },
-      }, tokenId);
-
-      if (directRes.ok || directRes.status === 204) {
-        let enrollData: unknown = null;
-        try { enrollData = await directRes.json(); } catch {}
-        return NextResponse.json({
-          success: true,
-          message: `Đã nhận quest (kết nối trực tiếp)`,
-          proxyInfo: { country: proxy.countryCode || countryCode, ip: proxy.host, port: proxy.port },
-          enrollData,
-        });
-      }
-
-      const directErrText = await directRes.text().catch(() => "");
-      const directDiscordError = parseDiscordError(directRes.status, directErrText);
+      console.log("[HiddenEnroll] 401 qua proxy — không gọi trực tiếp từ IP server");
       return NextResponse.json({
         success: false,
-        discordCode: directDiscordError.code,
-        error: directDiscordError.message,
-      });
+        discordCode: discordError.code,
+        error: `${discordError.message} (qua proxy ${proxy.countryCode || countryCode})`,
+      }, { status: 401 });
     }
 
     // Các lỗi khác — trả về lỗi Discord đã parse
