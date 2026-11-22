@@ -5,6 +5,7 @@ import { getOrCreateProxy } from "@/lib/proxyFactory";
 import { getStickyProxy } from "@/lib/proxyHelper";
 import { buildSuperProperties } from "@/lib/discord";
 import { isGatewayReady, getSuperProperties, getUserAgent } from "@/lib/gateway";
+import { isWebIdentity, webHeaders, userIdFromToken } from "@/lib/webIdentity";
 import https from "node:https";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { tokenIdOf } from "@/lib/tokenCheck";
@@ -271,6 +272,15 @@ export async function POST(request: NextRequest) {
       locale = "en-US"; timezone = "Asia/Saigon";
     }
 
+    // Identity phải là MỘT. Khối trên dựng header từ fingerprint Electron
+    // (buildSuperProperties/getUserAgent) trong khi login + REST đã khai web
+    // Chrome 157 kèm x-fingerprint/x-installation-id → cùng một token khai hai
+    // loại client cách nhau vài giây, và Discord thu hồi ngay sau khi enroll
+    // xong. Đây là lý do "login sạch mà nhận quest ẩn xong là revoked".
+    const enrollIdentity: Record<string, string> = isWebIdentity()
+      ? webHeaders(userIdFromToken(token), tokenId)
+      : {};
+
     // 4. Enroll qua proxy
     const body = JSON.stringify({
       location: isMobile ? 12 : 11,
@@ -294,6 +304,7 @@ export async function POST(request: NextRequest) {
         "origin": "https://discord.com",
         "referer": "https://discord.com/channels/@me",
         "pragma": "no-cache",
+        ...enrollIdentity,
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",

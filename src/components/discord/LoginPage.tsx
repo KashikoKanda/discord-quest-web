@@ -367,7 +367,9 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       )}
 
-      <div className="mb-3">
+      <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${preview ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"}`}>
+      <div className="overflow-hidden">
+      <div className="mb-3 animate-lp-pop">
         <p className="text-[10px] text-white/35 mb-1.5">Token này lấy từ đâu?</p>
         <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
           {([
@@ -393,8 +395,6 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </p>
       </div>
 
-      <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${preview ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"}`}>
-      <div className="overflow-hidden">
       <Button
         onClick={handleLogin}
         disabled={isLoading || !tokenInput.trim()}
