@@ -72,11 +72,20 @@ export async function GET(request: NextRequest) {
     const entries = decoded
       .split(/[\s,]+/)
       .map((l) => l.trim())
-      .filter((l) => /^[\w.-]+:\d{2,5}$/.test(l))
+      .filter((l) => /^(?:https?:\/\/)?[\w.-]+:\d{2,5}(?::[^:]+:[^:]+)?$/.test(l))
       .slice(0, 60)
       .map((line) => {
-        const [host, port] = line.split(":");
-        return { host, port: Number(port), countryCode: null as string | null };
+        // Nhận cả dạng host:port và host:port:user:pass để test proxy cần auth
+        // (ResiFactory, owlproxy) trước khi nạp vào PROXY_LIST_B64.
+        const clean = line.replace(/^https?:\/\//, "");
+        const [host, port, user, pass] = clean.split(":");
+        return {
+          host,
+          port: Number(port),
+          user: user || undefined,
+          pass: pass || undefined,
+          countryCode: null as string | null,
+        };
       });
     if (entries.length === 0) {
       return NextResponse.json({ success: false, error: "list rỗng hoặc sai định dạng ip:port" }, { status: 400 });
