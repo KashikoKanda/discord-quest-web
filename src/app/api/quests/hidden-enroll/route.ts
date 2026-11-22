@@ -141,7 +141,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Thiếu token, questId hoặc countryCode" }, { status: 400 });
     }
 
-    const tokenId = clientTokenId || tokenIdOf(token);
+    const tokenId = tokenIdOf(token);
+
+    // Quest khoá vùng khác nước đang sống của token = đổi IP sang nước khác ngay
+    // lập tức, Discord đọc là phiên bị đánh cắp và thu hồi token. Log 22/11
+    // 03:00:07 enroll quest ID qua proxy Indonesia lúc 03:00:11 OK, tới
+    // 03:00:19 đã 401 sáu lần liền. 03:02:33 quest PL lặp lại đúng như vậy.
+    // Mặc định TỪ CHỐI; bật ALLOW_REGION_HOP=1 nếu chấp nhận mất token.
+    if (process.env.ALLOW_REGION_HOP !== "1") {
+      const current = getStickyProxy(tokenId);
+      const currentCountry = (current?.countryCode || "").toUpperCase();
+      const wantCountry = String(countryCode).toUpperCase();
+      if (currentCountry && wantCountry && currentCountry !== wantCountry) {
+        return NextResponse.json(
+          {
+            error:
+              `Quest này khoá vùng ${wantCountry} còn phiên của bạn đang ở ${currentCountry}. ` +
+              `Đổi vùng đột ngột sẽ khiến Discord thu hồi token ngay, nên mình chặn lại. ` +
+              `Chọn quest cùng vùng ${currentCountry}, hoặc dùng một tài khoản giữ phiên ở ${wantCountry}.`,
+            regionBlocked: true,
+            sessionCountry: currentCountry,
+            questCountry: wantCountry,
+          },
+          { status: 409 },
+        );
+      }
+    }
     QuestWorker.registerToken(tokenId, token);
 
     // ─── Block hidden quest enrollment while regular quest is running ───

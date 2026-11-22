@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use tokenId from client (isolated per token) or generate from token hash
-    const tokenId = clientTokenId || tokenIdOf(token);
+    const tokenId = tokenIdOf(token);
     QuestWorker.registerToken(tokenId, token, true, autoClaim ?? true, multiQuest !== false);
 
     // Truyền multiQuest vào QuestWorker để quyết định chế độ

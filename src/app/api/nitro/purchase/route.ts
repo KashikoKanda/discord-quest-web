@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
     }
 
-    const tokenId = clientTokenId || tokenIdOf(token);
+    const tokenId = tokenIdOf(token);
 
     const status = getNitroStatus(tokenId);
     if (status.inProgress) {

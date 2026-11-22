@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token and questId required" }, { status: 400 });
     }
 
-    const tokenId = clientTokenId || tokenIdOf(token);
+    const tokenId = tokenIdOf(token);
     QuestWorker.registerToken(tokenId, token);
 
     const result = await QuestWorker.enroll(tokenId, questId, isMobile || false);
