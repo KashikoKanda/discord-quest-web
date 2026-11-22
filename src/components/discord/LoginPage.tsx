@@ -1248,26 +1248,26 @@ export default function LoginPage() {
               {/* viền gradient đỏ hồng phát sáng */}
               <div
                 className="absolute inset-0 rounded-xl"
-                style={{ background: "linear-gradient(135deg, rgba(246,96,111,0.95) 0%, rgba(232,121,249,0.55) 50%, rgba(246,96,111,0.35) 100%)" }}
+                style={{ background: "linear-gradient(135deg, rgba(246,96,111,0.42) 0%, rgba(232,121,249,0.20) 50%, rgba(246,96,111,0.16) 100%)" }}
               />
               <div
                 className="relative flex items-start gap-3 p-3.5 rounded-[11px]"
                 style={{
-                  background: "linear-gradient(135deg, rgba(246,96,111,0.16) 0%, rgba(24,12,18,0.96) 55%, rgba(246,96,111,0.10) 100%)",
-                  boxShadow: "0 12px 30px -14px rgba(246,96,111,0.55), inset 0 1px 0 rgba(255,255,255,0.06)",
+                  background: "linear-gradient(135deg, rgba(246,96,111,0.07) 0%, rgba(17,13,18,0.97) 55%, rgba(246,96,111,0.04) 100%)",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
                 }}
               >
                 <div
                   className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ background: "rgba(246,96,111,0.18)", border: "1px solid rgba(246,96,111,0.45)" }}
+                  style={{ background: "rgba(246,96,111,0.10)", border: "1px solid rgba(246,96,111,0.26)" }}
                 >
-                  <AlertTriangle className="w-[18px] h-[18px] text-[#FF7A86]" strokeWidth={2.6} />
+                  <AlertTriangle className="w-[17px] h-[17px] text-[#F6606F]" strokeWidth={2.2} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-extrabold text-[#FF7A86] tracking-tight leading-tight">
+                  <p className="text-[13px] font-bold text-[#F2788A] tracking-tight leading-tight">
                     Vi phạm Điều khoản Discord
                   </p>
-                  <p className="text-[12px] font-semibold text-white/85 leading-relaxed mt-1">
+                  <p className="text-[12px] font-medium text-white/65 leading-relaxed mt-1">
                     Công cụ này vi phạm TOS Discord. Tài khoản có thể bị đình chỉ.
                   </p>
                 </div>
