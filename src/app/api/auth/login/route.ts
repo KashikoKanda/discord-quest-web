@@ -6,6 +6,7 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { buildProxyUrl, getAllProxies, bindStickyProxy, describeFetchError, reportProxyAuthFailure, proxyAuthBlockedFor } from "@/lib/proxyHelper";
 import { pickSessionUA, buildDiscordHeaders, sessionUAFromFingerprint } from "@/lib/uaPool";
 import { isWebIdentity, webHeaders, userIdFromToken } from "@/lib/webIdentity";
+import { tokenIdOf } from "@/lib/tokenCheck";
 import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/tokenCheck";
 import { getEphemeralProxy } from "@/lib/proxyFactory";
 import { addTransientProxy } from "@/lib/proxyList";
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     if (!cleanToken) {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
     }
-    const tokenId = `t_${cleanToken.slice(0, 16)}`;
+    const tokenId = tokenIdOf(cleanToken);
     const userAgent = request.headers.get("user-agent") || undefined;
 
     initBuildVersion().catch(() => {});
