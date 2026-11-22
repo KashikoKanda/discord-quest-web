@@ -151,7 +151,9 @@ export function parseProxyLine(line: string): ProxyEntry | null {
   //   New: -XX-session-     (e.g. 8320967-b1cb285d85-BE-session-74193960-life-5m)
   const zoneMatch = user.match(/zone_([A-Z]{2})/i);
   const sessionMatch = user.match(/-([A-Z]{2})-session-/i);
-  const rawCC = zoneMatch?.[1] || sessionMatch?.[1] || null;
+  // ResiFactory nhúng targeting vào username: ResiFactory_xxx~vn~<hash>~1440
+  const tildeMatch = user.match(/~([a-z]{2})~/i);
+  const rawCC = zoneMatch?.[1] || sessionMatch?.[1] || tildeMatch?.[1] || null;
   const countryCode = rawCC ? rawCC.toUpperCase() : null;
 
   // Gate owlproxy (gate-xx.owlproxy.com:1000) chỉ nhận HTTP thường, TLS trên
