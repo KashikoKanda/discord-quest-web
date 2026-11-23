@@ -78,23 +78,30 @@ export function buildDiscordHeaders(token: string, extra?: Record<string, string
 
 /** Nhận chuỗi JSON dán từ console (hoặc token trần) và tách ra token + identity. */
 export function parseIdentityPayload(text: string): DeviceIdentity | null {
-  const t = (text || "").trim();
-  if (!t.startsWith("{")) return null;
+  const raw = (text || "").trim();
+  if (!raw.startsWith("{")) return null;
   try {
-    const o = JSON.parse(t) as Record<string, unknown>;
-    const token = String(o.token || o.TOKEN || "").trim();
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const pick = (...keys: string[]): string | undefined => {
+      for (const k of keys) {
+        const v = o[k];
+        if (v !== undefined && v !== null && String(v) !== "") return String(v);
+      }
+      return undefined;
+    };
+    const token = pick("t", "token", "TOKEN");
     if (!token) return null;
     return {
       token,
-      userAgent: o.userAgent ? String(o.userAgent) : undefined,
-      locale: o.locale ? String(o.locale) : undefined,
-      timezone: o.timezone ? String(o.timezone) : undefined,
-      superProperties: o.superProperties ? String(o.superProperties) : undefined,
-      fingerprint: o.fingerprint ? String(o.fingerprint) : undefined,
-      installationId: o.installationId ? String(o.installationId) : undefined,
-      debugOptions: o.debugOptions ? String(o.debugOptions) : undefined,
-      acceptLanguageHeader: o.acceptLanguageHeader ? String(o.acceptLanguageHeader) : undefined,
-      platform: o.platform ? String(o.platform) : undefined,
+      userAgent: pick("ua", "userAgent"),
+      locale: pick("l", "locale"),
+      timezone: pick("tz", "timezone"),
+      superProperties: pick("sp", "superProperties"),
+      fingerprint: pick("fp", "fingerprint"),
+      installationId: pick("ii", "installationId"),
+      debugOptions: pick("dbg", "debugOptions"),
+      acceptLanguageHeader: pick("al", "acceptLanguageHeader"),
+      platform: pick("p", "platform"),
     };
   } catch {
     return null;
@@ -102,13 +109,16 @@ export function parseIdentityPayload(text: string): DeviceIdentity | null {
 }
 
 /** Đoạn lệnh dán vào Console của discord.com để lấy token + dữ liệu thiết bị. */
-export const CONSOLE_SNIPPET = `(()=>{const cap={};const KEYS=['x-super-properties','x-fingerprint','x-installation-id','x-discord-locale','x-discord-timezone','x-debug-options','accept-language'];
-const grab=h=>{try{if(!h)return;const o=h instanceof Headers?Object.fromEntries(h.entries()):(Array.isArray(h)?Object.fromEntries(h):h);for(const k of Object.keys(o)){const lk=String(k).toLowerCase();if(KEYS.includes(lk))cap[lk]=String(o[k]);}}catch(e){}};
-const of=window.fetch;window.fetch=function(...a){try{const i=a[1]||{};grab(i.headers);if(a[0]&&a[0].headers)grab(a[0].headers);}catch(e){}return of.apply(this,a);};
-const ox=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(k,v){try{grab({[k]:v});}catch(e){}return ox.apply(this,arguments);};
-console.log('%cĐang thu thập header thật của Discord, chờ 5 giây...','color:#8B7CF6;font-weight:bold');
+export const CONSOLE_SNIPPET = `(()=>{const c={};const K=['x-super-properties','x-fingerprint','x-installation-id','x-discord-locale','x-discord-timezone'];
+const g=h=>{try{if(!h)return;const o=h instanceof Headers?Object.fromEntries(h):(Array.isArray(h)?Object.fromEntries(h):h);for(const k in o){const lk=String(k).toLowerCase();if(K.includes(lk))c[lk]=String(o[k]);}}catch(e){}};
+const of=window.fetch;window.fetch=function(...a){try{g(a[1]&&a[1].headers);}catch(e){}return of.apply(this,a);};
+const ox=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(k,v){try{g({[k]:v});}catch(e){}return ox.apply(this,arguments);};
+console.log('%cĐang lấy dữ liệu thiết bị, chờ 4 giây...','color:#8B7CF6;font-weight:bold');
 setTimeout(async()=>{window.fetch=of;XMLHttpRequest.prototype.setRequestHeader=ox;
-const token=(()=>{try{return (localStorage.getItem('token')||'').replace(/"/g,'');}catch(e){return '';}})();
-const out={token,userAgent:navigator.userAgent,locale:cap['x-discord-locale']||'vi',timezone:cap['x-discord-timezone']||Intl.DateTimeFormat().resolvedOptions().timeZone,superProperties:cap['x-super-properties']||'',fingerprint:cap['x-fingerprint']||'',installationId:cap['x-installation-id']||'',debugOptions:cap['x-debug-options']||'',acceptLanguageHeader:cap['accept-language']||navigator.language,platform:navigator.platform};
-const s=JSON.stringify(out);try{await navigator.clipboard.writeText(s);console.log('%cĐÃ COPY. Dán vào ô đăng nhập của web.','color:#3DD68C;font-weight:bold');}catch(e){console.log('%cKhông copy tự động được, copy thủ công chuỗi dưới đây:','color:#F5B544');}
-console.log(s);},5000);})();`;
+const t=((()=>{try{return localStorage.getItem('token')||'';}catch(e){return '';}})()).replace(/"/g,'');
+const o={t,l:c['x-discord-locale']||'vi',tz:c['x-discord-timezone']||Intl.DateTimeFormat().resolvedOptions().timeZone,sp:c['x-super-properties']||'',fp:c['x-fingerprint']||'',ii:c['x-installation-id']||''};
+const s=JSON.stringify(o);let ok=false;
+try{await navigator.clipboard.writeText(s);ok=true;}catch(e){try{const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;top:-9999px';document.body.appendChild(a);a.select();ok=document.execCommand('copy');document.body.removeChild(a);}catch(e2){}}
+if(ok){console.log('%c✅ Đã copy. Dán vào ô Token của web rồi đăng nhập.','color:#3DD68C;font-weight:bold');}
+else{console.log('%c⚠ Không tự copy được — chuỗi đã hiện trong khung đen, Ctrl+C rồi dán vào ô Token.','color:#F5B544;font-weight:bold');const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;inset:15% 8%;z-index:2147483647;font:12px monospace;background:#0b0b12;color:#fff;border:1px solid #5865F2;border-radius:10px;padding:10px';document.body.appendChild(a);a.focus();a.select();}
+},4000);})();`;

@@ -345,22 +345,22 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       </div>
 
-      {/* Lấy dữ liệu thiết bị 1:1 từ phiên Discord đang sống */}
-      <div className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <p className="text-[12px] font-semibold text-white/85">Lấy đúng dữ liệu thiết bị (chống revoke)</p>
-          <button type="button" onClick={copySnippet} className="h-7 px-2 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors">
-            {snippetCopied ? "Đã copy" : "Copy lệnh"}
-          </button>
+      {/* Dữ liệu thiết bị — gọn 1 hàng */}
+      <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2">
+        <KeyRound className="w-4 h-4 shrink-0 text-[#8B7CF6]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-semibold text-white/85 leading-tight">Dữ liệu thiết bị (chống revoke)</p>
+          <p className="text-[10.5px] text-white/40 leading-tight mt-0.5 truncate">
+            {deviceBound ? "Đã gắn vào token này" : "F12 trên discord.com → Console → dán lệnh → dán kết quả vào ô Token"}
+          </p>
         </div>
-        <ol className="text-[11px] text-white/50 leading-relaxed space-y-0.5 list-decimal pl-4">
-          <li>Mở discord.com trên chính máy đang đăng nhập, nhấn F12 → tab Console.</li>
-          <li>Bấm Copy lệnh ở trên, dán vào Console, Enter, chờ 5 giây.</li>
-          <li>Dán chuỗi JSON vừa copy vào ô Token bên dưới rồi đăng nhập.</li>
-        </ol>
-        <p className={`text-[10px] mt-2 ${deviceBound ? "text-[#3DD68C]" : "text-white/30"}`}>
-          {deviceBound ? "Đã gắn dữ liệu thiết bị vào token này. Mọi request sẽ dùng đúng bộ header đó." : "Chưa gắn dữ liệu thiết bị: dùng header mặc định."}
-        </p>
+        <button
+          type="button"
+          onClick={copySnippet}
+          className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors"
+        >
+          {snippetCopied ? "Đã copy" : "Copy lệnh"}
+        </button>
       </div>
 
       <div className={`token-shell mb-3 ${looksValid ? "is-valid" : ""}`}>
