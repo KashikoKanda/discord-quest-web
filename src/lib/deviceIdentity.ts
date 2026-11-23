@@ -96,7 +96,7 @@ export function parseIdentityPayload(text: string): DeviceIdentity | null {
       }
       return undefined;
     };
-    const token = (pick("t", "token", "TOKEN") || "")
+    const token = (pick("t", "tok", "token", "TOKEN") || "")
       .replace(/\s+/g, "")
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/^(bot|bearer)/i, "");
@@ -122,8 +122,8 @@ export function parseIdentityPayload(text: string): DeviceIdentity | null {
 /** Đoạn lệnh dán vào Console của discord.com để lấy token + dữ liệu thiết bị. */
 export const CONSOLE_SNIPPET = `(()=>{const c={};const K=['x-super-properties','x-fingerprint','x-installation-id','x-discord-locale','x-discord-timezone'];
 const g=h=>{try{if(!h)return;const o=h instanceof Headers?Object.fromEntries(h):(Array.isArray(h)?Object.fromEntries(h):h);for(const k in o){const lk=String(k).toLowerCase();if(K.includes(lk))c[lk]=String(o[k]);}}catch(e){}};
-const ok=s=>/^[\w-]{20,}\.[\w-]{5,}\.[\w-]{20,}$/.test(s);
-const clean=v=>String(v||'').trim().replace(/^["'\`]+|["'\`]+$/g,'').replace(/^(bot|bearer)\s+/i,'').trim();
+const ok=s=>{const p=String(s||'').split('.');return p.length===3&&p[0].length>=15&&p[2].length>=15;};
+const clean=v=>String(v||'').replace(/\s+/g,'').replace(/^["'\`]+|["'\`]+$/g,'').replace(/^(bot|bearer)/i,'');
 const findTok=()=>{let t='';
  try{t=clean(localStorage.getItem('token'));if(ok(t))return t;}catch(e){}
  try{for(let i=0;i<localStorage.length;i++){const v=clean(localStorage.getItem(localStorage.key(i)));if(ok(v))return v;}}catch(e){}
