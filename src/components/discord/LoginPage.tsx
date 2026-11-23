@@ -346,31 +346,30 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       </div>
 
-      {/* Dữ liệu thiết bị — gọn 1 hàng */}
-      <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2">
-        <KeyRound className="w-4 h-4 shrink-0 text-[#8B7CF6]" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-semibold text-white/85 leading-tight">Dữ liệu thiết bị (chống revoke)</p>
-          <p className="text-[10.5px] text-white/40 leading-tight mt-0.5 truncate">
-            {deviceBound ? `Đã gắn · token …${tokenInput.slice(-6)}` : "F12 trên discord.com → Console → dán lệnh → dán kết quả vào ô dưới"}
+      {/* Dữ liệu thiết bị — khung cố định, không đẩy layout */}
+      <div className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.03] overflow-hidden">
+        <div className="flex items-center gap-2 px-3 h-11">
+          <KeyRound className="w-4 h-4 shrink-0 text-[#8B7CF6]" />
+          <p className="flex-1 min-w-0 truncate text-[12px] font-semibold text-white/85">
+            {deviceBound ? `Đã gắn · token …${tokenInput.slice(-6)}` : "Dữ liệu thiết bị (chống revoke)"}
           </p>
+          <button
+            type="button"
+            onClick={copySnippet}
+            className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors"
+          >
+            {snippetCopied ? "Đã copy" : "Copy lệnh"}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={copySnippet}
-          className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors"
-        >
-          {snippetCopied ? "Đã copy" : "Copy lệnh"}
-        </button>
+        <textarea
+          value={deviceJson}
+          onChange={(e) => { setDeviceJson(e.target.value); handleRawInput(e.target.value); }}
+          placeholder="F12 → Console → dán lệnh → dán kết quả vào đây"
+          rows={1}
+          spellCheck={false}
+          className="block w-full h-9 max-h-9 px-3 bg-black/25 border-t border-white/[0.06] text-[11px] font-mono leading-9 text-white/70 placeholder:text-white/25 outline-none resize-none overflow-x-auto whitespace-pre"
+        />
       </div>
-      <textarea
-        value={deviceJson}
-        onChange={(e) => { setDeviceJson(e.target.value); handleRawInput(e.target.value); }}
-        placeholder="Dán chuỗi JSON vừa copy ở Console vào đây (hoặc dán thẳng vào ô Token)"
-        rows={2}
-        spellCheck={false}
-        className="mb-3 w-full rounded-xl bg-black/30 border border-white/[0.08] px-2.5 py-2 text-[11px] font-mono text-white/70 placeholder:text-white/25 outline-none focus:border-[#5865F2]/50 resize-none"
-      />
 
       <div className={`token-shell mb-3 ${looksValid ? "is-valid" : ""}`}>
         <div className="relative rounded-[0.9rem] bg-white/[0.035] border border-white/[0.08] overflow-hidden">

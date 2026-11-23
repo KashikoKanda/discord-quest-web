@@ -16,6 +16,13 @@ export type DeviceIdentity = {
   debugOptions?: string;
   acceptLanguageHeader?: string;
   platform?: string;
+  hardwareConcurrency?: number;
+  deviceMemory?: number;
+  screen?: string;
+  devicePixelRatio?: number;
+  timezoneOffset?: number;
+  clientVersion?: string;
+  raw?: Record<string, string>;
   capturedAt?: number;
 };
 
@@ -69,17 +76,27 @@ function defaultSuperProps(): string {
 /** Header gửi Discord: ưu tiên dữ liệu đã lấy từ máy người dùng. */
 export function buildDiscordHeaders(token: string, extra?: Record<string, string>): Record<string, string> {
   const id = getDeviceIdentity(token);
-  const h: Record<string, string> = {
-    Authorization: token,
-    "Content-Type": "application/json",
-    "X-Super-Properties": usable(id?.superProperties) ? (id!.superProperties as string) : defaultSuperProps(),
-    "X-Discord-Locale": id?.locale || "vi",
-    "X-Discord-Timezone": id?.timezone || "Asia/Saigon",
-  };
+  const h: Record<string, string> = { Authorization: token, "Content-Type": "application/json" };
+
+  // 1:1 — chép nguyên bộ header thật của Discord, chỉ bỏ header trình duyệt
+  // cấm set (user-agent, sec-*) vì browser tự gửi bản đúng của máy.
+  const RAW_OK = ["x-super-properties", "x-fingerprint", "x-installation-id", "x-discord-locale",
+    "x-discord-timezone", "x-debug-options", "x-discord-client-version", "x-client-trace-id",
+    "x-discord-referrer-current", "x-discord-referrer-location", "accept-language"];
+  if (id?.raw) {
+    for (const [k, v] of Object.entries(id.raw)) {
+      if (RAW_OK.includes(k.toLowerCase()) && usable(v)) h[k] = v;
+    }
+  }
+  if (usable(id?.superProperties)) h["X-Super-Properties"] = id!.superProperties as string;
+  if (!h["X-Super-Properties"] && !h["x-super-properties"]) h["X-Super-Properties"] = defaultSuperProps();
   if (usable(id?.fingerprint)) h["X-Fingerprint"] = id!.fingerprint as string;
   if (usable(id?.installationId)) h["X-Installation-Id"] = id!.installationId as string;
   if (usable(id?.debugOptions)) h["X-Debug-Options"] = id!.debugOptions as string;
+  if (usable(id?.clientVersion)) h["X-Discord-Client-Version"] = id!.clientVersion as string;
   if (usable(id?.acceptLanguageHeader)) h["Accept-Language"] = id!.acceptLanguageHeader as string;
+  if (!h["X-Discord-Locale"] && !h["x-discord-locale"]) h["X-Discord-Locale"] = id?.locale || "vi";
+  if (!h["X-Discord-Timezone"] && !h["x-discord-timezone"]) h["X-Discord-Timezone"] = id?.timezone || "Asia/Saigon";
   return { ...h, ...(extra || {}) };
 }
 
@@ -113,6 +130,13 @@ export function parseIdentityPayload(text: string): DeviceIdentity | null {
       debugOptions: safe(pick("dbg", "debugOptions")),
       acceptLanguageHeader: safe(pick("al", "acceptLanguageHeader")),
       platform: pick("p", "platform"),
+      hardwareConcurrency: Number(pick("hc")) || undefined,
+      deviceMemory: Number(pick("dm")) || undefined,
+      screen: pick("scr", "screen"),
+      devicePixelRatio: Number(pick("dpr")) || undefined,
+      timezoneOffset: Number(pick("tzo")) || undefined,
+      clientVersion: pick("cv", "clientVersion"),
+      raw: (o.raw && typeof o.raw === "object" ? (o.raw as Record<string, string>) : undefined),
     };
   } catch {
     return null;
@@ -120,10 +144,10 @@ export function parseIdentityPayload(text: string): DeviceIdentity | null {
 }
 
 /** Đoạn lệnh dán vào Console của discord.com để lấy token + dữ liệu thiết bị. */
-export const CONSOLE_SNIPPET = `(()=>{const c={};const K=['x-super-properties','x-fingerprint','x-installation-id','x-discord-locale','x-discord-timezone'];
-const g=h=>{try{if(!h)return;const o=h instanceof Headers?Object.fromEntries(h):(Array.isArray(h)?Object.fromEntries(h):h);for(const k in o){const lk=String(k).toLowerCase();if(K.includes(lk))c[lk]=String(o[k]);}}catch(e){}};
+export const CONSOLE_SNIPPET = `(()=>{const c={};const KEYS=['x-super-properties','x-fingerprint','x-installation-id','x-discord-locale','x-discord-timezone','x-debug-options','accept-language','x-discord-client-version','x-client-trace-id','x-discord-referrer-current','x-discord-referrer-location','user-agent','sec-ch-ua','sec-ch-ua-mobile','sec-ch-ua-platform','x-super-properties'];
+const g=h=>{try{if(!h)return;const o=h instanceof Headers?Object.fromEntries(h):(Array.isArray(h)?Object.fromEntries(h):h);for(const k in o){const lk=String(k).toLowerCase();if(KEYS.includes(lk))c[lk]=String(o[k]);}}catch(e){}};
 const ok=s=>{const p=String(s||'').split('.');return p.length===3&&p[0].length>=15&&p[2].length>=15;};
-const clean=v=>String(v||'').replace(/\s+/g,'').replace(/^["'\`]+|["'\`]+$/g,'').replace(/^(bot|bearer)/i,'');
+const clean=v=>String(v||'').replace(/\\s+/g,'').replace(/^["'\`]+|["'\`]+$/g,'').replace(/^(bot|bearer)/i,'');
 const findTok=()=>{let t='';
  try{t=clean(localStorage.getItem('token'));if(ok(t))return t;}catch(e){}
  try{for(let i=0;i<localStorage.length;i++){const v=clean(localStorage.getItem(localStorage.key(i)));if(ok(v))return v;}}catch(e){}
@@ -131,13 +155,13 @@ const findTok=()=>{let t='';
  return ok(t)?t:'';};
 const of=window.fetch;window.fetch=function(...a){try{g(a[1]&&a[1].headers);}catch(e){}return of.apply(this,a);};
 const ox=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(k,v){try{g({[k]:v});}catch(e){}return ox.apply(this,arguments);};
-console.log('%cĐang lấy dữ liệu thiết bị, chờ 4 giây...','color:#8B7CF6;font-weight:bold');
+console.log('%cĐang lấy TOÀN BỘ dữ liệu thiết bị, chờ 4 giây...','color:#8B7CF6;font-weight:bold');
 setTimeout(async()=>{window.fetch=of;XMLHttpRequest.prototype.setRequestHeader=ox;
 const t=findTok();
-if(!t){console.log('%c❌ Không tìm thấy token. Hãy chắc chắn bạn đang mở discord.com và ĐÃ ĐĂNG NHẬP, rồi chạy lại lệnh này.','color:#F6606F;font-weight:bold');return;}
-const o={t,l:c['x-discord-locale']||'vi',tz:c['x-discord-timezone']||Intl.DateTimeFormat().resolvedOptions().timeZone,sp:c['x-super-properties']||'',fp:c['x-fingerprint']||'',ii:c['x-installation-id']||''};
+if(!t){console.log('%c❌ Không tìm thấy token. Mở discord.com, ĐĂNG NHẬP rồi chạy lại lệnh.','color:#F6606F;font-weight:bold');return;}
+const o={t,ua:navigator.userAgent,al:navigator.language,als:(navigator.languages||[]).join(','),p:navigator.platform,hc:navigator.hardwareConcurrency||0,dm:navigator.deviceMemory||0,scr:(screen.width+'x'+screen.height+'x'+screen.colorDepth),dpr:window.devicePixelRatio||1,tzo:new Date().getTimezoneOffset(),l:c['x-discord-locale']||'vi',tz:c['x-discord-timezone']||Intl.DateTimeFormat().resolvedOptions().timeZone,sp:c['x-super-properties']||'',fp:c['x-fingerprint']||'',ii:c['x-installation-id']||'',dbg:c['x-debug-options']||'',cv:c['x-discord-client-version']||'',raw:c};
 const s=JSON.stringify(o);let ok2=false;
 try{await navigator.clipboard.writeText(s);ok2=true;}catch(e){try{const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;top:-9999px';document.body.appendChild(a);a.select();ok2=document.execCommand('copy');document.body.removeChild(a);}catch(e2){}}
-if(ok2){console.log('%c✅ Đã copy (token ...'+t.slice(-6)+'). Dán vào ô Token của web rồi đăng nhập.','color:#3DD68C;font-weight:bold');}
-else{console.log('%c⚠ Không tự copy được — chuỗi đã hiện trong khung đen, Ctrl+C rồi dán vào ô Token.','color:#F5B544;font-weight:bold');const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;inset:15% 8%;z-index:2147483647;font:12px monospace;background:#0b0b12;color:#fff;border:1px solid #5865F2;border-radius:10px;padding:10px';document.body.appendChild(a);a.focus();a.select();}
+if(ok2){console.log('%c✅ Đã copy TOÀN BỘ ('+Math.round(s.length/1024)+'KB, token …'+t.slice(-6)+'). Dán vào ô Token của web.','color:#3DD68C;font-weight:bold');}
+else{console.log('%c⚠ Không tự copy được — chuỗi hiện trong khung đen, Ctrl+C rồi dán.','color:#F5B544;font-weight:bold');const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;inset:15% 8%;z-index:2147483647;font:12px monospace;background:#0b0b12;color:#fff;border:1px solid #5865F2;border-radius:10px;padding:10px';document.body.appendChild(a);a.focus();a.select();}
 },4000);})();`;
