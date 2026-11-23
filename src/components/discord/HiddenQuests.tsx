@@ -2,6 +2,7 @@
 
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
+import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -716,7 +717,7 @@ export default function HiddenQuests() {
       let clientQuests: unknown = null;
       try {
         const raw = await fetch("https://discord.com/api/v9/quests/@me", {
-          headers: { Authorization: token },
+          headers: buildDiscordHeaders(token),
           cache: "no-store",
         });
         if (raw.ok) clientQuests = await raw.json();

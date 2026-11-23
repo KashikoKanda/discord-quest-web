@@ -3,6 +3,7 @@
  * Dùng chung cho Dashboard và trang Quest ẩn để không lệch logic.
  */
 import { REQUIRED_GUILD_ID } from "@/lib/guildConfig";
+import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 
 export type GuildResult = { member: boolean; name: string | null; icon: string | null };
 
@@ -15,7 +16,7 @@ export async function checkGuildMembership(token: string): Promise<GuildResult |
   // 1) Danh sách guild của chính tài khoản: 1 request, trả luôn tên + icon.
   try {
     const r = await fetch("https://discord.com/api/v9/users/@me/guilds", {
-      headers: { Authorization: token },
+      headers: buildDiscordHeaders(token),
       cache: "no-store",
     });
     if (r.ok) {
@@ -34,7 +35,7 @@ export async function checkGuildMembership(token: string): Promise<GuildResult |
   // 2) Hỏi thẳng guild.
   try {
     const g = await fetch(`https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`, {
-      headers: { Authorization: token },
+      headers: buildDiscordHeaders(token),
       cache: "no-store",
     });
     if (g.status === 200) {

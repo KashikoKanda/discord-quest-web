@@ -12,6 +12,8 @@
 
 import { normalizeToken } from "@/lib/tokenCheck";
 
+import { buildDiscordHeaders } from "@/lib/deviceIdentity";
+
 const API = "https://discord.com/api/v9";
 
 export type LocalProfile = {
@@ -107,7 +109,7 @@ export async function verifyTokenLocal(rawToken: string): Promise<{ ok: boolean;
   const token = normalizeToken(rawToken);
   try {
     const res = await fetch(`${API}/users/@me`, {
-      headers: baseHeaders({ Authorization: token }),
+      headers: { ...baseHeaders(), ...buildDiscordHeaders(token) },
     });
     if (res.status !== 200) return { ok: false, status: res.status };
     const p = await res.json();

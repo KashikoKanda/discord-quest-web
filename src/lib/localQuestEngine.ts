@@ -11,6 +11,8 @@
  * tới và cho phép header Authorization, nên trình duyệt gọi thẳng được.
  */
 
+import { buildDiscordHeaders, getDeviceIdentity } from "@/lib/deviceIdentity";
+
 const API = "https://discord.com/api/v9";
 const GATEWAY = "wss://gateway.discord.gg/?v=9&encoding=json";
 
@@ -118,11 +120,8 @@ export function startLocalEngine(
   activeStop = () => { stopped = true; try { ws?.close(); } catch { /* ignore */ } };
 
   const headers = () => ({
-    Authorization: tok,
-    "Content-Type": "application/json",
-    "X-Super-Properties": superProps(),
-    "X-Discord-Locale": "vi",
-    "X-Discord-Timezone": "Asia/Saigon",
+    ...buildDiscordHeaders(tok),
+    "X-Super-Properties": getDeviceIdentity(tok)?.superProperties || superProps(),
   });
 
   const api = async (path: string, init?: { method?: string; body?: unknown }) => {

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useAppStore } from "@/lib/store";
 import { verifyTokenLocal, loginPasswordLocal, submitMfaLocal, registerSessionLocal } from "@/lib/localLogin";
+import { parseIdentityPayload, saveDeviceIdentity, CONSOLE_SNIPPET } from "@/lib/deviceIdentity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -298,10 +299,32 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenInput]);
 
+  // Dán nguyên khối JSON lấy từ Console discord.com → gắn cứng bộ header thiết
+  // bị (x-super-properties, x-fingerprint, x-installation-id, locale, timezone)
+  // vào token này, để Discord thấy đúng một thiết bị thay vì hai client.
+  const handleRawInput = (raw: string) => {
+    const id = parseIdentityPayload(raw);
+    if (id) {
+      saveDeviceIdentity(id.token, id);
+      setTokenInput(id.token);
+      setError("");
+      setDeviceBound(true);
+      return;
+    }
+    setTokenInput(raw);
+    if (error) setError("");
+  };
+
+  const [deviceBound, setDeviceBound] = useState(false);
+  const [snippetCopied, setSnippetCopied] = useState(false);
+  const copySnippet = async () => {
+    try { await navigator.clipboard.writeText(CONSOLE_SNIPPET); setSnippetCopied(true); setTimeout(() => setSnippetCopied(false), 1800); } catch { /* ignore */ }
+  };
+
   const pasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) { setTokenInput(text.trim()); setError(""); setPasted(true); setTimeout(() => setPasted(false), 1400); }
+      if (text) { handleRawInput(text); setPasted(true); setTimeout(() => setPasted(false), 1400); }
     } catch {
       /* trình duyệt chặn clipboard → để người dùng tự dán */
     }
@@ -322,6 +345,24 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       </div>
 
+      {/* Lấy dữ liệu thiết bị 1:1 từ phiên Discord đang sống */}
+      <div className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-[12px] font-semibold text-white/85">Lấy đúng dữ liệu thiết bị (chống revoke)</p>
+          <button type="button" onClick={copySnippet} className="h-7 px-2 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors">
+            {snippetCopied ? "Đã copy" : "Copy lệnh"}
+          </button>
+        </div>
+        <ol className="text-[11px] text-white/50 leading-relaxed space-y-0.5 list-decimal pl-4">
+          <li>Mở discord.com trên chính máy đang đăng nhập, nhấn F12 → tab Console.</li>
+          <li>Bấm Copy lệnh ở trên, dán vào Console, Enter, chờ 5 giây.</li>
+          <li>Dán chuỗi JSON vừa copy vào ô Token bên dưới rồi đăng nhập.</li>
+        </ol>
+        <p className={`text-[10px] mt-2 ${deviceBound ? "text-[#3DD68C]" : "text-white/30"}`}>
+          {deviceBound ? "Đã gắn dữ liệu thiết bị vào token này. Mọi request sẽ dùng đúng bộ header đó." : "Chưa gắn dữ liệu thiết bị: dùng header mặc định."}
+        </p>
+      </div>
+
       <div className={`token-shell mb-3 ${looksValid ? "is-valid" : ""}`}>
         <div className="relative rounded-[0.9rem] bg-white/[0.035] border border-white/[0.08] overflow-hidden">
           <div className="absolute inset-y-0 left-0 w-9 flex items-center justify-center pointer-events-none">
@@ -331,7 +372,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
             type={showToken ? "text" : "password"}
             placeholder="Dán token tài khoản Discord..."
             value={tokenInput}
-            onChange={(e) => { setTokenInput(e.target.value); if (error) setError(""); }}
+            onChange={(e) => handleRawInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !isLoading && handleLogin()}
             autoComplete="off"
             data-form-type="other"

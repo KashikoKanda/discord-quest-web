@@ -7,6 +7,7 @@ import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL } from "@/lib/guildConfig";
 import { checkGuildMembership } from "@/lib/guildCheck";
 import { startLocalEngine, isLocalEngineRunning, stopLocalEngine } from "@/lib/localQuestEngine";
+import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MotionSection } from "@/components/discord/MotionSection";
@@ -192,7 +193,7 @@ export default function Dashboard() {
       let clientQuests: unknown = null;
       try {
         const raw = await fetch("https://discord.com/api/v9/quests/@me", {
-          headers: { Authorization: token },
+          headers: buildDiscordHeaders(token),
           cache: "no-store",
         });
         if (raw.ok) clientQuests = await raw.json();
