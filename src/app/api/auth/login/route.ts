@@ -11,6 +11,7 @@ import { checkDiscordToken, normalizeToken, tokenErrorMessage } from "@/lib/toke
 import { getEphemeralProxy } from "@/lib/proxyFactory";
 import { addTransientProxy } from "@/lib/proxyList";
 import { getClientCountry } from "@/lib/geoCountry";
+import { isMaintenance, MAINTENANCE_MESSAGE } from "@/lib/maintenance";
 
 /**
  * POST /api/auth/login
@@ -30,6 +31,15 @@ import { getClientCountry } from "@/lib/geoCountry";
  */
 export async function POST(request: NextRequest) {
   try {
+    // Web đang tạm đóng để bảo trì (MAINTENANCE_MODE=1): chặn mọi login ngay
+    // tại cửa, không gọi Discord, không tạo phiên.
+    if (isMaintenance()) {
+      return NextResponse.json(
+        { success: false, maintenance: true, error: MAINTENANCE_MESSAGE },
+        { status: 503 },
+      );
+    }
+
     // CHỈ nhận login đã được TRÌNH DUYỆT xác thực. Đường login qua proxy cũ
     // (server gọi Discord bằng token) chính là thứ làm token bị revoke: log
     // 23:27:00 có "[Auth Login] Người dùng login từ VN · pool có: VN" → proxy

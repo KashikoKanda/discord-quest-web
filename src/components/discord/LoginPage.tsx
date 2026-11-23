@@ -1213,7 +1213,29 @@ export default function LoginPage() {
           <div className="space-y-3 mb-8 max-w-md">
             {features.map((feat, i) => {
               const Icon = feat.icon;
-              return (
+             // Panel bảo trì: che toàn bộ form, không cho đăng nhập khi web đang đóng.
+  if (maintenance) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center px-6 bg-[#0b0b12]">
+        <div className="w-full max-w-sm text-center rounded-2xl border border-white/[0.08] bg-white/[0.03] p-7">
+          <div className="mx-auto mb-4 w-12 h-12 rounded-xl flex items-center justify-center bg-[#F5B544]/12 border border-[#F5B544]/25">
+            <Lock className="w-5 h-5 text-[#F5B544]" />
+          </div>
+          <p className="text-display text-lg text-white mb-2">Web đang tạm đóng</p>
+          <p className="text-[12.5px] text-white/60 leading-relaxed">{maintenance.reason}</p>
+          <button
+            type="button"
+            onClick={() => refreshStatus()}
+            className="mt-5 h-9 px-4 rounded-lg text-[12px] font-medium bg-white/[0.06] border border-white/[0.1] text-white/75 hover:bg-white/[0.1] transition-colors"
+          >
+            {checkingStatus ? "Đang kiểm tra…" : "Kiểm tra lại"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+   return (
                 <div
                   key={feat.title}
                   className="flex items-start gap-3 animate-fade-up"

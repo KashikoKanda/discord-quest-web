@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyAuthBlockedFor } from "@/lib/proxyHelper";
+import { isMaintenance, MAINTENANCE_MESSAGE } from "@/lib/maintenance";
 
 /**
  * GET /api/status
@@ -13,12 +14,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const blockedMs = proxyAuthBlockedFor();
-  const maintenance = blockedMs > 0;
+  // Công tắc đóng web (MAINTENANCE_MODE) hoặc cầu dao 407 của proxy.
+  const manual = isMaintenance();
+  const maintenance = manual || blockedMs > 0;
   return NextResponse.json({
     success: true,
     maintenance,
-    reason: maintenance ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút." : null,
-    retryInSeconds: maintenance ? Math.ceil(blockedMs / 1000) : 0,
+    reason: manual ? MAINTENANCE_MESSAGE : maintenance ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút." : null,
+    retryInSeconds: manual ? 0 : maintenance ? Math.ceil(blockedMs / 1000) : 0,
     checkedAt: new Date().toISOString(),
   });
 }
