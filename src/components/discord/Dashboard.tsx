@@ -8,6 +8,7 @@ import { GUILD_INVITE_URL } from "@/lib/guildConfig";
 import { checkGuildMembership } from "@/lib/guildCheck";
 import { startLocalEngine, isLocalEngineRunning, stopLocalEngine } from "@/lib/localQuestEngine";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
+import { enrollQuestBrowser } from "@/lib/questActions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MotionSection } from "@/components/discord/MotionSection";
@@ -316,9 +317,8 @@ export default function Dashboard() {
     if (!token) return;
     setActionLoading(questId);
     try {
-      const res = await fetch("/api/quests/enroll", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, questId, tokenId }) });
-      const data = await res.json();
-      if (checkTokenExpired(res, data)) { setActionLoading(null); return; }
+      // Nhận quest NGAY TRONG TRÌNH DUYỆT (IP mạng nhà), không qua server/proxy.
+      const data = await enrollQuestBrowser(token, questId);
       if (data.success) { addLog({ level: "success", message: `Đã đăng ký quest`, timestamp: Date.now() }); await refreshQuests(); }
       else addLog({ level: "error", message: data.message || "Đăng ký thất bại", timestamp: Date.now() });
     } catch (err: unknown) { addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }

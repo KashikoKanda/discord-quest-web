@@ -135,6 +135,10 @@ function proxiedRequest(
  * - Proxy tự trả về kho sau 5 phút không dùng
  */
 export async function POST(request: NextRequest) {
+  // Toàn bộ web chạy ở mạng nhà: route này không còn được dùng, trả lỗi rõ
+  // ràng thay vì âm thầm gửi request mang token qua proxy/IP Render.
+  return NextResponse.json({ success: false, movedToBrowser: true, error: "Nhận quest ẩn giờ chạy trong trình duyệt (IP mạng nhà)." }, { status: 410 });
+
   try {
     const { token, questId, countryCode, tokenId: clientTokenId, isMobile, questData } = await request.json();
 

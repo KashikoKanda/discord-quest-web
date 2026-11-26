@@ -60,9 +60,16 @@ export async function POST(request: NextRequest) {
       excludedQuests = Array.isArray(cq.excluded_quests) ? (cq.excluded_quests as Record<string, unknown>[]) : [];
       console.log(`[Quests] ${quests.length} quest do trình duyệt tải (IP gốc)`);
     } else {
-      const fetched = await fetchDiscordQuests(token);
-      quests = fetched.quests as Record<string, unknown>[];
-      excludedQuests = fetched.excludedQuests as Record<string, unknown>[];
+      // KHÔNG gọi Discord từ server nữa: toàn bộ web chạy ở mạng nhà. Thiếu
+      // danh sách do trình duyệt tải thì trả rỗng, không bắn request mang token
+      // từ IP Render.
+      return NextResponse.json({
+        success: true,
+        quests: [],
+        excludedQuestIds: [],
+        orbsBalance: null,
+        message: "Danh sách quest phải do trình duyệt tải (mạng nhà).",
+      });
     }
     const workerProgress = QuestWorker.getAllQuestProgress(tokenId);
 

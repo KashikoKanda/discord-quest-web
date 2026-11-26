@@ -3,6 +3,7 @@
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
+import { enrollQuestBrowser } from "@/lib/questActions";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -1176,20 +1177,16 @@ export default function HiddenQuests() {
     for (const cc of countryCodes) {
       lastCountryCode = cc;
       try {
-        const res = await fetch("/api/quests/hidden-enroll", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            token,
-            questId: quest.id,
-            countryCode: cc,
-            isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
-            questData: quest,
-          }),
+        // Nhận quest NGAY TRONG TRÌNH DUYỆT: request đi từ IP mạng nhà, không
+        // qua server/proxy. countryCode không còn tác dụng vì IP do máy quyết.
+        const res = await enrollQuestBrowser(token, quest.id, {
+          isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
+          questData: quest,
         });
-        lastRes = res;
-        data = await res.json();
+        data = { success: res.success, message: res.message };
+        lastRes = null;
         if (data.success) break;
+        break; // chỉ thử một lần, IP nhà cố định
         // If proxy error (no_proxy or full), try next country
         if (data.proxyError === "full" || data.proxyError === "no_proxy") {
           setProxyAvailability((prev) => ({
@@ -1205,7 +1202,9 @@ export default function HiddenQuests() {
       }
     }
 
-    if (!lastRes || !data) {
+    // lastRes không còn dùng (enroll chạy trong trình duyệt, không qua route
+    // server) — chỉ cần kiểm tra data.
+    if (!data) {
       setEnrollResult((prev) => ({
         ...prev,
         [quest.id]: { success: false, message: "Lỗi kết nối" },
@@ -1262,18 +1261,11 @@ export default function HiddenQuests() {
 
           for (const altCc of altCountryCodes) {
             try {
-              const altRes = await fetch("/api/quests/hidden-enroll", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  token,
-                  questId: altQuest.id,
-                  countryCode: altCc,
-                  isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
-                  questData: altQuest,
-                }),
+              const altRes = await enrollQuestBrowser(token, altQuest.id, {
+                isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
+                questData: altQuest,
               });
-              const altData = await altRes.json();
+              const altData = { success: altRes.success, message: altRes.message };
               if (altData.success) {
                 setEnrollResult((prev) => ({
                   ...prev,
