@@ -3,6 +3,7 @@
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
+import { waitIfPaused, withSessionHandoff } from "@/lib/sessionGate";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -731,6 +732,7 @@ export default function HiddenQuests() {
       // KHÔNG gọi Discord bằng token nữa (đó là thứ làm revoke khi mở quest ẩn).
       let clientQuests: unknown = null;
       try {
+        await waitIfPaused();
         const raw = await fetch("https://discord.com/api/v9/quests/@me", {
           headers: buildDiscordHeaders(token),
           cache: "no-store",
@@ -1051,6 +1053,7 @@ export default function HiddenQuests() {
     (async () => {
       let decided = false;
       try {
+        await waitIfPaused();
         const r = await fetch("https://discord.com/api/v9/users/@me/guilds", {
           // Dùng đúng bộ header thiết bị đã dán từ Console: thiếu identity thì
           // Discord dễ trả 401/429, và trước đây rơi xuống nhánh dưới rồi khoá oan.
@@ -1079,6 +1082,7 @@ export default function HiddenQuests() {
       }
       if (!decided) {
         try {
+          await waitIfPaused();
           const g = await fetch(
             `https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`,
             { headers: buildDiscordHeaders(token), cache: "no-store" },
@@ -1205,20 +1209,33 @@ export default function HiddenQuests() {
         // KHÔNG thử IP nhà trước nữa.
         lastRes = null;
         try {
-          const r = await fetch("/api/quests/hidden-enroll", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token,
-              questId: quest.id,
-              countryCode: cc,
-              isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
-              questData: quest,
-            }),
+          // Hai IP không được chồng lên nhau: web im lặng 8s, gửi đúng một
+          // request enroll qua proxy nước quest, rồi im thêm 15s trước khi
+          // hoạt động lại từ IP nhà.
+          addLog({ level: "info", message: `Tạm dừng 8s rồi nhận qua proxy ${cc} (không để 2 IP chồng nhau)`, timestamp: Date.now() });
+          const j = await withSessionHandoff(async () => {
+            const r = await fetch("/api/quests/hidden-enroll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                token,
+                questId: quest.id,
+                countryCode: cc,
+                isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
+                questData: quest,
+              }),
+            });
+            return r.json();
           });
-          const j = await r.json();
           if (j && typeof j === "object") data = j;
-        } catch { /* giữ lỗi từ IP nhà */ }
+          addLog({
+            level: data?.success ? "success" : "warn",
+            message: data?.success
+              ? `Nhận qua proxy ${cc} xong — chờ 15s để phiên ổn định rồi mới dùng lại IP nhà`
+              : `Proxy ${cc} trả lỗi: ${data?.error || data?.message || "không rõ"}`,
+            timestamp: Date.now(),
+          });
+        } catch { /* giữ lỗi cũ */ }
         if (data.success) break;
         break;
         // If proxy error (no_proxy or full), try next country

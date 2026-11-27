@@ -12,6 +12,7 @@
  */
 
 import { buildDiscordHeaders, getDeviceIdentity } from "@/lib/deviceIdentity";
+import { waitIfPaused } from "@/lib/sessionGate";
 
 const API = "https://discord.com/api/v9";
 const GATEWAY = "wss://gateway.discord.gg/?v=9&encoding=json";
@@ -125,6 +126,7 @@ export function startLocalEngine(
   });
 
   const api = async (path: string, init?: { method?: string; body?: unknown }) => {
+    await waitIfPaused();
     const res = await fetch(`${API}${path}`, {
       method: init?.method || "GET",
       headers: headers(),

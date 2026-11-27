@@ -9,6 +9,7 @@ import { checkGuildMembership } from "@/lib/guildCheck";
 import { startLocalEngine, isLocalEngineRunning, stopLocalEngine } from "@/lib/localQuestEngine";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 import { enrollQuestBrowser } from "@/lib/questActions";
+import { waitIfPaused } from "@/lib/sessionGate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MotionSection } from "@/components/discord/MotionSection";
@@ -177,6 +178,7 @@ export default function Dashboard() {
       // trình duyệt gọi thẳng Discord, server chỉ định dạng lại dữ liệu.
       let clientQuests: unknown = null;
       try {
+        await waitIfPaused();
         const raw = await fetch("https://discord.com/api/v9/quests/@me", {
           headers: buildDiscordHeaders(token),
           cache: "no-store",
