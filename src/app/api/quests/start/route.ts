@@ -12,6 +12,19 @@ import { tokenIdOf } from "@/lib/tokenCheck";
  */
 export async function POST(request: NextRequest) {
   try {
+  // CHẶN SERVER CHẠY QUEST/GATEWAY: mọi request mang token phải đi từ trình duyệt
+  // (IP nhà). Server mà mở gateway hoặc enroll song song = split-brain IP, Discord
+  // revoke ngay. Chỉ bật lại khi thật sự muốn bằng ALLOW_SERVER_QUEST=1.
+  if (process.env.ALLOW_SERVER_QUEST !== "1") {
+    return NextResponse.json(
+      {
+        success: false,
+        serverDisabled: true,
+        error: "Quest chỉ chạy trong trình duyệt từ IP nhà. Server không nhận token nữa.",
+      },
+      { status: 410 },
+    );
+  }
     const { token, questId, tokenId: clientTokenId, isVerified, autoClaim, multiQuest } = await request.json();
 
     if (!token) {

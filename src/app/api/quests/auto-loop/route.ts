@@ -14,6 +14,19 @@ import { QuestWorker } from "@/lib/questWorker";
  *   never clicked "Bắt đầu"), this endpoint will auto-register it.
  */
 export async function POST(request: NextRequest) {
+  // CHẶN SERVER CHẠY QUEST/GATEWAY: mọi request mang token phải đi từ trình duyệt
+  // (IP nhà). Server mà mở gateway hoặc enroll song song = split-brain IP, Discord
+  // revoke ngay. Chỉ bật lại khi thật sự muốn bằng ALLOW_SERVER_QUEST=1.
+  if (process.env.ALLOW_SERVER_QUEST !== "1") {
+    return NextResponse.json(
+      {
+        success: false,
+        serverDisabled: true,
+        error: "Quest chỉ chạy trong trình duyệt từ IP nhà. Server không nhận token nữa.",
+      },
+      { status: 410 },
+    );
+  }
   try {
     const { tokenId, token, enabled, isVerified, multiQuest } = await request.json();
 
