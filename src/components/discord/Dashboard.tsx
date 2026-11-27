@@ -301,35 +301,15 @@ export default function Dashboard() {
       }, { concurrency: multiQuestEnabled ? 3 : 1 });
       // Nếu engine trình duyệt không xử lý được quest nào, chạy tiếp bằng worker
       // server — đúng cách file nguồn (questWorker + gateway) vẫn làm.
-      // Bằng chứng từ DevTools của owner: POST /quests/<id>/heartbeat từ trình
-      // duyệt trả 401, còn preflight OPTIONS của /quests/<id>/claim trả 404 nên
-      // trình duyệt KHÔNG gửi được request claim. Hai việc này buộc phải chạy ở
-      // server (đúng như questWorker của file nguồn). Vì vậy chuyển sang worker
-      // server không chỉ khi 0 quest, mà cả khi còn quest chưa xong.
-      const unfinished = quests.filter((q) => q.status === "available" || q.status === "enrolled" || q.status === "running").length;
-      if (progressed === 0 || unfinished > 0) {
+      // ĐÃ BỎ fallback worker server: gateway WebSocket của worker đi qua proxy
+      // tốn ~10 MB mỗi lần nối (log ResiFactory: gateway.discord.gg 297 MB / 28
+      // request), đốt sạch ví trong vài phút. Quest chỉ chạy trong trình duyệt.
+      if (progressed === 0) {
         addLog({
           level: "warn",
-          message: progressed === 0
-            ? "Engine trình duyệt không xử lý được quest nào — chuyển sang worker server"
-            : `Còn ${unfinished} quest chưa xong (heartbeat/claim bị Discord chặn từ trình duyệt) — chuyển sang worker server`,
+          message: "Trình duyệt không xử lý được quest nào (xem log phía trên). Worker server đã tắt để không đốt proxy.",
           timestamp: Date.now(),
         });
-        try {
-          const r = await fetch("/api/quests/start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token, tokenId, isVerified, multiQuest: multiQuestEnabled }),
-          });
-          const d = await r.json().catch(() => ({}));
-          addLog({
-            level: d.success ? "info" : "error",
-            message: d.message || d.error || `Worker server trả HTTP ${r.status}`,
-            timestamp: Date.now(),
-          });
-        } catch (e) {
-          addLog({ level: "error", message: `Không gọi được worker server: ${e instanceof Error ? e.message : "lỗi mạng"}`, timestamp: Date.now() });
-        }
       }
       setWorkerStatus("idle");
       void refreshQuests();
