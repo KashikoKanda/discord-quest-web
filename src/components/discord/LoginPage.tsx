@@ -341,13 +341,13 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     }
   };
 
-  const [authMode, setAuthMode] = useState<"token" | "email">("token");
+  const [authMode, setAuthMode] = useState<"token" | "email" | "qr">("token");
 
   // Hai lối vào: token (chạy hoàn toàn trong trình duyệt, IP nhà) và email +
   // mật khẩu (bắt buộc đi qua server vì Discord chặn Origin lạ — xem ghi chú
   // trong src/app/api/auth/password/route.ts).
   const modeTabs = (
-    <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.07] bg-white/[0.04] p-1">
+    <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl border border-white/[0.07] bg-white/[0.04] p-1">
       <button
         type="button"
         onClick={() => setAuthMode("token")}
@@ -366,8 +366,56 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       >
         Email &amp; mật khẩu
       </button>
+      <button
+        type="button"
+        onClick={() => setAuthMode("qr")}
+        className={`h-8 rounded-lg text-[11px] font-semibold transition-colors ${
+          authMode === "qr" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"
+        }`}
+      >
+        Mã QR
+      </button>
     </div>
   );
+
+  if (authMode === "qr") {
+    const steps = [
+      "Mở discord.com/login trên chính máy này, bấm Đăng nhập bằng mã QR.",
+      "Quét mã bằng điện thoại đang đăng nhập Discord, xác nhận trên điện thoại.",
+      "Quay lại đây, dán khối dữ liệu thiết bị vào tab Token rồi bấm Đăng nhập.",
+    ];
+    return (
+      <div>
+        {modeTabs}
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+          <p className="mb-2 text-[11px] font-semibold text-white/70">
+            Đăng nhập bằng mã QR (quét bằng điện thoại)
+          </p>
+          <ol className="mb-3 space-y-1.5">
+            {steps.map((t, i) => (
+              <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-white/55">
+                <span className="mt-[1px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[9.5px] font-semibold text-white/60">
+                  {i + 1}
+                </span>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mb-3 text-[10.5px] leading-relaxed text-white/35">
+            Discord chỉ cho quét QR từ trang của chính họ, nên bước quét làm ở đó. Token vẫn sinh ra trên máy
+            này, cùng IP nhà như luồng token.
+          </p>
+          <button
+            type="button"
+            onClick={copySnippet}
+            className="h-9 w-full rounded-lg border border-[#5865F2]/30 bg-[#5865F2]/15 text-[11.5px] font-semibold text-[#B9BFFF] transition-colors hover:bg-[#5865F2]/25"
+          >
+            {snippetCopied ? "Đã copy lệnh" : "Copy lệnh lấy dữ liệu thiết bị"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (authMode === "email") {
     return (
