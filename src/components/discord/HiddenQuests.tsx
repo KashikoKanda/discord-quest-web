@@ -5,6 +5,7 @@ import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 import { waitIfPaused, withSessionHandoff } from "@/lib/sessionGate";
 import { enrollQuestBrowser } from "@/lib/questActions";
+import { recordSnapshot, lastSnapshot, diffSnapshots, describeDiff } from "@/lib/sessionTrace";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -1187,6 +1188,33 @@ export default function HiddenQuests() {
       }));
       return;
     }
+
+    // SO SÁNH PHIÊN: chụp thông số ngay trước khi nhận, đối chiếu với lúc login.
+    // Chỉ IP được phép khác; mọi header/UA/timezone lệch đều bị ghi cảnh báo.
+    try {
+      const before = lastSnapshot(token, "login");
+      const now = await recordSnapshot(token, "enroll");
+      if (before) {
+        const diffs = diffSnapshots(before, now);
+        const changed = diffs.filter((d) => d.changed);
+        addLog({
+          level: changed.length ? "warn" : "success",
+          message: changed.length
+            ? `So với lúc login, ${changed.length} thông số ĐÃ ĐỔI — chi tiết bên dưới`
+            : "So với lúc login: IP và toàn bộ header KHÔNG đổi",
+          timestamp: Date.now(),
+        });
+        for (const d of changed) {
+          addLog({ level: "warn", message: describeDiff(d), timestamp: Date.now() });
+        }
+      } else {
+        addLog({
+          level: "info",
+          message: `Chưa có mốc login để so sánh. Thông số hiện tại: IP ${now.ip}, UA ${now.userAgent.slice(0, 40)}…`,
+          timestamp: Date.now(),
+        });
+      }
+    } catch { /* so sánh lỗi thì vẫn nhận quest bình thường */ }
 
     // Determine country codes to try for enrollment (luôn lấy quốc gia đầu tiên)
     // Unknown/global → random 1 trong 2: US hoặc GB (UK)

@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useAppStore } from "@/lib/store";
 import { verifyTokenLocal, loginPasswordLocal, submitMfaLocal, registerSessionLocal } from "@/lib/localLogin";
 import { parseIdentityPayload, saveDeviceIdentity, CONSOLE_SNIPPET } from "@/lib/deviceIdentity";
+import { recordSnapshot } from "@/lib/sessionTrace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -306,6 +307,8 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     const id = parseIdentityPayload(raw);
     if (id) {
       saveDeviceIdentity(id.token, id);
+      // Chụp thông số phiên lúc login để lát nữa so với lúc nhận quest ẩn.
+      recordSnapshot(id.token, "login").catch(() => { /* không chặn login */ });
       setTokenInput(id.token);
       setError("");
       setDeviceBound(true);
