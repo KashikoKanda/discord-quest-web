@@ -853,9 +853,19 @@ const QuestCard = memo(function QuestCard({
         <p className="text-[11px] text-white/40 leading-tight line-clamp-1">{gameTitle || "—"}</p>
 
         {quest.reward && quest.reward !== "Unknown" && (
-          <div className="flex items-center gap-1 text-[11px]">
-            <OrbIcon className="w-3 h-3" />
-            <span className="text-[#E879F9] font-medium">{quest.reward}</span>
+          <div className="flex items-center gap-1 text-[11px] min-w-0">
+            {quest.rewardIconUrl ? (
+              <img
+                src={quest.rewardIconUrl}
+                alt=""
+                className="w-3.5 h-3.5 shrink-0 rounded-[3px] object-contain"
+                loading="lazy"
+                decoding="async"
+              />
+            ) : (
+              <OrbIcon className="w-3 h-3 shrink-0" />
+            )}
+            <span className="text-[#E879F9] font-medium truncate">{quest.reward}</span>
           </div>
         )}
 

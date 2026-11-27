@@ -557,8 +557,17 @@ const QuestCard16x9 = memo(function QuestCard16x9({
 
         {/* Reward name */}
         {quest.reward && quest.reward !== "Unknown" && (
-          <p className="text-[10px] sm:text-[11px] lg:text-xs leading-tight line-clamp-1 flex items-center gap-1">
-            <span className="text-[#E879F9] font-medium">{quest.reward}</span>
+          <p className="text-[10px] sm:text-[11px] lg:text-xs leading-tight line-clamp-1 flex items-center gap-1 min-w-0">
+            {quest.rewardIconUrl ? (
+              <img
+                src={quest.rewardIconUrl}
+                alt=""
+                className="w-3.5 h-3.5 shrink-0 rounded-[3px] object-contain"
+                loading="lazy"
+                decoding="async"
+              />
+            ) : null}
+            <span className="text-[#E879F9] font-medium truncate">{quest.reward}</span>
           </p>
         )}
 
