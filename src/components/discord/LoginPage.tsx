@@ -317,6 +317,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
 
   const [deviceBound, setDeviceBound] = useState(false);
   const [deviceJson, setDeviceJson] = useState("");
+  const [showDeviceBackup, setShowDeviceBackup] = useState(false);
   const [snippetCopied, setSnippetCopied] = useState(false);
   const copySnippet = async () => {
     try { await navigator.clipboard.writeText(CONSOLE_SNIPPET); setSnippetCopied(true); setTimeout(() => setSnippetCopied(false), 1800); } catch { /* ignore */ }
@@ -346,29 +347,42 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         </div>
       </div>
 
-      {/* Dữ liệu thiết bị — khung cố định, không đẩy layout */}
-      <div className="mb-3 rounded-xl border border-white/[0.07] bg-white/[0.03] overflow-hidden">
-        <div className="flex items-center gap-2 px-3 h-11">
-          <KeyRound className="w-4 h-4 shrink-0 text-[#8B7CF6]" />
-          <p className="flex-1 min-w-0 truncate text-[12px] font-semibold text-white/85">
-            {deviceBound ? `Đã gắn · token …${tokenInput.slice(-6)}` : "Dữ liệu thiết bị (chống revoke)"}
-          </p>
-          <button
-            type="button"
-            onClick={copySnippet}
-            className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors"
-          >
-            {snippetCopied ? "Đã copy" : "Copy lệnh"}
-          </button>
-        </div>
-        <textarea
-          value={deviceJson}
-          onChange={(e) => { setDeviceJson(e.target.value); handleRawInput(e.target.value); }}
-          placeholder="F12 → Console → dán lệnh → dán kết quả vào đây"
-          rows={1}
-          spellCheck={false}
-          className="block w-full h-9 max-h-9 px-3 bg-black/25 border-t border-white/[0.06] text-[11px] font-mono leading-9 text-white/70 placeholder:text-white/25 outline-none resize-none overflow-x-auto whitespace-pre"
-        />
+      {/* Dự phòng: dữ liệu thiết bị lấy từ Console — ẩn mặc định, chỉ hiện khi cần */}
+      <div className="mb-3">
+        <button
+          type="button"
+          onClick={() => setShowDeviceBackup((v) => !v)}
+          className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white/70 transition-colors"
+        >
+          <KeyRound className="w-3.5 h-3.5" />
+          <span>Dự phòng: dữ liệu thiết bị từ Console</span>
+          <span className="text-[10px]">{showDeviceBackup ? "▲" : "▼"}</span>
+        </button>
+        {showDeviceBackup && (
+          <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.03] overflow-hidden">
+    <div className="flex items-center gap-2 px-3 h-11">
+              <KeyRound className="w-4 h-4 shrink-0 text-[#8B7CF6]" />
+              <p className="flex-1 min-w-0 truncate text-[12px] font-semibold text-white/85">
+                {deviceBound ? `Đã gắn · token …${tokenInput.slice(-6)}` : "Dữ liệu thiết bị (chống revoke)"}
+              </p>
+              <button
+                type="button"
+                onClick={copySnippet}
+                className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-medium bg-[#5865F2]/15 border border-[#5865F2]/30 text-[#B9BFFF] hover:bg-[#5865F2]/25 transition-colors"
+              >
+                {snippetCopied ? "Đã copy" : "Copy lệnh"}
+              </button>
+            </div>
+            <textarea
+              value={deviceJson}
+              onChange={(e) => { setDeviceJson(e.target.value); handleRawInput(e.target.value); }}
+              placeholder="F12 → Console → dán lệnh → dán kết quả vào đây"
+              rows={1}
+              spellCheck={false}
+              className="block w-full h-9 max-h-9 px-3 bg-black/25 border-t border-white/[0.06] text-[11px] font-mono leading-9 text-white/70 placeholder:text-white/25 outline-none resize-none overflow-x-auto whitespace-pre"
+            />
+          </div>
+        )}
       </div>
 
       <div className={`token-shell mb-3 ${looksValid ? "is-valid" : ""}`}>
