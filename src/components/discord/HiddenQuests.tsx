@@ -1047,6 +1047,12 @@ export default function HiddenQuests() {
   // This ensures the lock state is accurate even if user left the guild
   useEffect(() => {
     if (!token) return;
+    // Chốt an toàn: dù mạng treo hay cache lỗi, tối đa 10s phải thoát trạng thái
+    // "Đang kiểm tra tư cách thành viên" để không bao giờ đứng hình.
+    const watchdog = setTimeout(() => {
+      setChecking(false);
+      setGuildCheckLoading(false);
+    }, 10000);
     // Mỗi lần mở trang trước đây đều bắn request mang token lên Discord. Giờ
     // dùng cache 12 giờ: mở lại trang không gọi Discord nữa.
     try {
@@ -1056,6 +1062,10 @@ export default function HiddenQuests() {
         if (c && typeof c.at === "number" && Date.now() - c.at < 12 * 3600 * 1000) {
           setGuildMember(c.member === true, c.name ?? null, c.icon ?? null);
           setGuildCheckLoading(false);
+          // Phải tắt luôn cờ checking, nếu không khung "Đang kiểm tra tư cách
+          // thành viên" treo vĩnh viễn vì nhánh cache thoát sớm.
+          setChecking(false);
+          clearTimeout(watchdog);
           return;
         }
       }
@@ -1113,6 +1123,7 @@ export default function HiddenQuests() {
       // Không xác định được thì GIỮ NGUYÊN trạng thái cũ, tránh nháy khoá oan.
       setGuildCheckLoading(false);
       setChecking(false);
+      clearTimeout(watchdog);
     })();
   }, [token, setGuildMember, setGuildCheckLoading]);
 
