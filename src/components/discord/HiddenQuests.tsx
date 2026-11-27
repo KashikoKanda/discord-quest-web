@@ -393,7 +393,8 @@ const QuestCard16x9 = memo(function QuestCard16x9({
 
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
-  const bannerUrl = quest.bannerUrl;
+  const hideQuestBanners = useAppStore((st) => st.hideQuestBanners);
+  const bannerUrl = hideQuestBanners ? undefined : quest.bannerUrl;
 
   const questName = quest.name || "Quest";
   const gameTitle = quest.gameTitle || null;
@@ -889,7 +890,11 @@ export default function HiddenQuests() {
             progress: 0,
             expiresAt: q.config?.expires_at,
             reward: reward?.messages?.name || "Unknown",
-            rewardIconUrl: reward?.asset ? `https://cdn.discordapp.com/quests/${q.id}/${reward.asset}` : undefined,
+            rewardIconUrl: reward?.orb_quantity
+              ? "https://discordquest.com/discord/quests/orbs.webp"
+              : reward?.asset
+              ? `https://cdn.discordapp.com/quests/${q.id}/${reward.asset}?format=webp`
+              : undefined,
             bannerUrl: heroAsset ? `/api/quests/banner?questId=${encodeURIComponent(q.id)}&hero=${encodeURIComponent(heroAsset)}` : undefined,
             applicationId: q.config?.application?.id || null,
             applicationName: q.config?.application?.name || undefined,

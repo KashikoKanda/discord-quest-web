@@ -715,7 +715,8 @@ const QuestCard = memo(function QuestCard({
 
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(true); // assume loaded — prevents flash on scroll
-  const bannerUrl = quest.bannerUrl;
+  const hideQuestBanners = useAppStore((st) => st.hideQuestBanners);
+  const bannerUrl = hideQuestBanners ? undefined : quest.bannerUrl;
 
   const imgRef = useRef<HTMLImageElement>(null);
   useEffect(() => {

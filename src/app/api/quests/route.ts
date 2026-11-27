@@ -108,8 +108,15 @@ export async function POST(request: NextRequest) {
       const rewards = rewardsConfig?.rewards as Array<Record<string, unknown>> | undefined;
       const rewardMessages = rewards?.[0]?.messages as Record<string, string> | undefined;
       const rewardName = rewardMessages?.name || rewardMessages?.name_with_article || "Unknown";
-      const rewardIconUrl = rewards?.[0]?.icon_url as string | undefined;
       const orbsReward = getOrbsReward(q);
+      const rewardAsset = rewards?.[0]?.asset as string | undefined;
+      // Icon phần thưởng: quest orbs dùng icon orbs chính thức của discordquest;
+      // quest thường dùng ẢNH THẬT của phần quà trên CDN Discord, ép webp.
+      const rewardIconUrl = orbsReward && orbsReward > 0
+        ? "https://discordquest.com/discord/quests/orbs.webp"
+        : rewardAsset
+        ? `https://cdn.discordapp.com/${String(rewardAsset).replace(/^\/+/, "")}?format=webp`
+        : (rewards?.[0]?.icon_url as string | undefined);
 
       const isVideoType = questType.startsWith("WATCH_VIDEO") || questType === "STREAM_ON_DESKTOP";
       const target = isVideoType ? getVideoSecondsNeeded(q) : getPlayDurationNeeded(q);

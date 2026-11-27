@@ -119,6 +119,8 @@ interface AppState {
   setAutoQuestEnabled: (enabled: boolean) => void;
   setAutoNitroEnabled: (enabled: boolean) => void;
   setMultiQuestEnabled: (enabled: boolean) => void;
+  hideQuestBanners: boolean;
+  setHideQuestBanners: (v: boolean) => void;
   setGuildMember: (isMember: boolean, guildName?: string | null, guildIcon?: string | null) => void;
   setGuildCheckLoading: (loading: boolean) => void;
   addLog: (log: Omit<LogEntry, "id">) => void;
@@ -143,6 +145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   autoQuestEnabled: false,
   multiQuestEnabled: false,
   autoNitroEnabled: false,
+  hideQuestBanners: false,
   isGuildMember: false,
   guildCheckLoading: false,
   guildCheckedOnce: false,
@@ -161,6 +164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const autoQuest = verified && persistedAutoQuest;
     const persistedMultiQuest = storage ? storage.getItem("dq_multi_quest") === "true" : false;
     const persistedAutoNitro = storage ? storage.getItem("dq_auto_nitro") === "true" : false;
+    const persistedHideBanners = storage ? storage.getItem("dq_hide_banners") === "true" : false;
     // Restore or generate sessionId (persisted per browser)
     let sid = storage ? storage.getItem("dq_session_id") : null;
     if (!sid) {
@@ -186,6 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       autoQuestEnabled: autoQuest,
       multiQuestEnabled: persistedMultiQuest,
       autoNitroEnabled: persistedAutoNitro,
+      hideQuestBanners: persistedHideBanners,
       sessionId: sid,
       isGuildMember: false,
       guildCheckLoading: true,
@@ -303,6 +308,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (storage) {
       storage.setItem("dq_multi_quest", String(enabled));
     }
+  },
+
+  // Tắt banner quest để khỏi tải ảnh bìa thừa (chỉ ảnh hưởng hiển thị).
+  setHideQuestBanners: (v) => {
+    set({ hideQuestBanners: v });
+    if (storage) storage.setItem("dq_hide_banners", String(v));
   },
 
   setGuildMember: (isMember, guildName, guildIcon) => {
@@ -449,6 +460,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           autoQuestEnabled: autoQuestPref,
           multiQuestEnabled: multiQuestPref,
           autoNitroEnabled: autoNitroPref,
+          hideQuestBanners: storage.getItem("dq_hide_banners") === "true",
           sessionId: restoredSid,
           sessionChecking: false,
           // Dùng kết quả đã xác nhận trước đó (nếu có) để không lóe thẻ khoá;
