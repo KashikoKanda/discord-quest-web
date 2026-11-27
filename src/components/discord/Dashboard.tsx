@@ -267,7 +267,12 @@ export default function Dashboard() {
   }, [workerStatus, pollWorkerStatus]);
 
   const startQuests = async () => {
-    if (!token) return;
+    if (!token) {
+      addLog({ level: "warn", message: "Chưa có token — đăng nhập lại rồi thử", timestamp: Date.now() });
+      return;
+    }
+    // Phản hồi ngay để bấm là thấy có tác dụng, không im lặng.
+    addLog({ level: "info", message: "Đã bấm bắt đầu — đang khởi động engine quest…", timestamp: Date.now() });
     const avail = quests.filter((q) => q.status === "available" || q.status === "enrolled").length;
     // Owner: "mở khoá nút làm quest" — không chặn nút khi danh sách trống nữa.
     // Trước đây bấm vào là phát laugh.mp3 rồi return, nhìn như nút bị khoá.
@@ -527,7 +532,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="relative flex-1 text-left min-w-0">
-                      <p className="text-display text-lg sm:text-xl text-white truncate">Tạm đóng làm quest</p>
+                      <p className="text-display text-lg sm:text-xl text-white truncate">Bắt đầu làm quest</p>
                       <p className="text-[11px] text-white/40 mt-0.5 hidden sm:block">
                         {available > 0 ? `${available} quest sẵn sàng` : "Không có quest mới"}
                       </p>
