@@ -373,6 +373,14 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     return (
       <div>
         {modeTabs}
+        <div className="mb-3 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2.5">
+          <p className="text-[11px] leading-relaxed text-amber-100/80">
+            Discord chặn login email từ origin của web (lỗi 50067), nên form dưới chỉ dùng được khi
+            request đi từ máy bạn. Muốn dùng đúng IP nhà như token: chạy
+            <span className="mx-1 rounded bg-black/30 px-1 font-mono text-[10.5px]">node scripts/local-login.mjs</span>
+            trên máy, rồi dán khối JSON nó in ra vào tab Token.
+          </p>
+        </div>
         <EmailLogin onLoginSuccess={onLoginSuccess} parentLoading={loading} />
       </div>
     );
