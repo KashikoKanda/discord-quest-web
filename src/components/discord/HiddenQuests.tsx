@@ -3,7 +3,6 @@
 import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
-import { enrollQuestBrowser } from "@/lib/questActions";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -1201,16 +1200,10 @@ export default function HiddenQuests() {
     for (const cc of countryCodes) {
       lastCountryCode = cc;
       try {
-        // (1) Thử từ IP NHÀ trước — phiên trình duyệt giữ nguyên, không ngắt IP gốc.
-        const local = await enrollQuestBrowser(token, quest.id, {
-          isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
-          questData: quest,
-        });
-        data = { success: local.success, message: local.message };
+        // Owner chốt: ấn nhận quest ẩn là đi THẲNG qua proxy đúng nước của quest
+        // (mở proxy → enroll đúng một request → đóng ngay, không ghim vào token).
+        // KHÔNG thử IP nhà trước nữa.
         lastRes = null;
-        if (data.success) break;
-        // (2) Quest khoá vùng: nhận qua proxy đúng nước quest — server mở proxy,
-        //     enroll đúng một request rồi đóng ngay, không ghim vào token.
         try {
           const r = await fetch("/api/quests/hidden-enroll", {
             method: "POST",
@@ -1302,11 +1295,19 @@ export default function HiddenQuests() {
 
           for (const altCc of altCountryCodes) {
             try {
-              const altRes = await enrollQuestBrowser(token, altQuest.id, {
-                isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
-                questData: altQuest,
+              // Variant cũng nhận qua proxy đúng nước, không qua IP nhà.
+              const altRes = await fetch("/api/quests/hidden-enroll", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  token,
+                  questId: altQuest.id,
+                  countryCode: altCc,
+                  isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
+                  questData: altQuest,
+                }),
               });
-              const altData = { success: altRes.success, message: altRes.message };
+              const altData = await altRes.json();
               if (altData.success) {
                 setEnrollResult((prev) => ({
                   ...prev,
