@@ -252,7 +252,9 @@ export async function POST(request: NextRequest) {
             const sid = clientSessionId || generateSessionId();
             // Ghim luôn proxy vừa login cho token: REST/enroll/gateway sau đó đi
             // đúng IP này, không đổi IP giữa phiên nữa.
-            bindStickyProxy(tokenId, proxy);
+            // KHÔNG ghim proxy vào token nữa (owner: proxy chỉ để nhận quest,
+            // không duy trì). Nhánh legacy này cũng không còn chạy vì login đã
+            // bắt buộc clientVerified, nhưng giữ đây làm chốt an toàn.
             registerSession(tokenId, sid, sessionUserAgent);
             await adoptFingerprint(tokenId, {
               userAgent: uaSession.ua.userAgent,
