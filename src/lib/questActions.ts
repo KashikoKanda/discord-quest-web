@@ -11,7 +11,7 @@ const API = "https://discord.com/api/v9";
 
 type QuestLike = Record<string, unknown> | undefined;
 
-export type ActionResult = { success: boolean; status: number; message: string };
+export type ActionResult = { success: boolean; status: number; message: string; retryAfter?: number };
 
 export async function enrollQuestBrowser(
   token: string,
@@ -43,8 +43,17 @@ export async function enrollQuestBrowser(
     let message = `Lỗi ${res.status}`;
     try {
       const text = await res.text();
-      const parsed = JSON.parse(text) as { message?: string; code?: number };
+      const parsed = JSON.parse(text) as { message?: string; code?: number; retry_after?: number };
       if (parsed?.message) message = parsed.code ? `${parsed.message} (${parsed.code})` : parsed.message;
+      if (res.status === 429) {
+        const wait = Math.ceil(Number(parsed?.retry_after ?? 15));
+        return {
+          success: false,
+          status: 429,
+          message: `Discord giới hạn tần suất, thử lại sau ${wait}s`,
+          retryAfter: wait,
+        };
+      }
     } catch { /* body không phải JSON */ }
     if (res.status === 401) message = "Token bị Discord từ chối (401)";
     return { success: false, status: res.status, message };

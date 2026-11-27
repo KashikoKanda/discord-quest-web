@@ -688,6 +688,11 @@ export default function HiddenQuests() {
   const [enrollLoading, setEnrollLoading] = useState<string | null>(null);
   const [enrollResult, setEnrollResult] = useState<Record<string, { success: boolean; message: string }>>({});
   const [enrollCooldown, setEnrollCooldown] = useState(0); // đếm ngược 30s sau mỗi lần nhận
+  useEffect(() => {
+    if (enrollCooldown <= 0) return;
+    const timer = setInterval(() => setEnrollCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [enrollCooldown]);
   const cooldownRef = useRef<NodeJS.Timeout | null>(null);
   const COOLDOWN_STORAGE_KEY = "hiddenQuestCooldownEndsAt";
   const initialDone = useRef(false);
@@ -1181,6 +1186,14 @@ export default function HiddenQuests() {
 
   // Handle enrolling in a hidden quest
   const handleEnroll = useCallback(async (quest: QuestData) => {
+    // Đang bị Discord giới hạn tần suất: KHÔNG gửi thêm request nào nữa.
+    if (enrollCooldown > 0) {
+      setEnrollResult((prev) => ({
+        ...prev,
+        [quest.id]: { success: false, message: `Discord đang giới hạn, chờ ${enrollCooldown}s rồi thử lại` },
+      }));
+      return;
+    }
     if (!token) {
       setEnrollResult((prev) => ({
         ...prev,
@@ -1285,6 +1298,18 @@ export default function HiddenQuests() {
           });
         } catch { /* giữ lỗi cũ */ }
         if (data.success) break;
+        // 429 = quá nhiều request. Dừng hẳn, bật đếm ngược, KHÔNG thử proxy
+        // (thử thêm chỉ làm Discord phạt lâu hơn).
+        if (r.status === 429 || /rate limit|giới hạn tần suất/i.test(r.message)) {
+          const wait = Math.max(5, Math.ceil(r.retryAfter ?? 15));
+          setEnrollCooldown(wait);
+          addLog({
+            level: "warn",
+            message: `Discord giới hạn tần suất — chờ ${wait}s rồi thử lại, không gửi thêm request`,
+            timestamp: Date.now(),
+          });
+          break;
+        }
         // Discord trả 260008 / 404 = tài khoản không thấy quest này, gần như luôn
         // là quest khoá vùng. Owner yêu cầu đảm bảo có kết nối proxy, nên thử
         // ĐÚNG MỘT lần qua proxy đúng nước quest (chấp nhận rủi ro revoke).
