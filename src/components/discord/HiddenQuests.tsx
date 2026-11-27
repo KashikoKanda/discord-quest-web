@@ -1285,6 +1285,44 @@ export default function HiddenQuests() {
           });
         } catch { /* giữ lỗi cũ */ }
         if (data.success) break;
+        // Discord trả 260008 / 404 = tài khoản không thấy quest này, gần như luôn
+        // là quest khoá vùng. Owner yêu cầu đảm bảo có kết nối proxy, nên thử
+        // ĐÚNG MỘT lần qua proxy đúng nước quest (chấp nhận rủi ro revoke).
+        const unknownQuest = data.status === 404 || /260008|Unknown Quest/i.test(String(data.message || data.error || ""));
+        if (unknownQuest && cc) {
+          addLog({
+            level: "warn",
+            message: `Quest khoá vùng ${cc} — thử nhận qua proxy ${cc} (có thể bị revoke)`,
+            timestamp: Date.now(),
+          });
+          try {
+            const rp = await fetch("/api/quests/hidden-enroll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                token,
+                questId: quest.id,
+                countryCode: cc,
+                isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
+                questData: quest,
+              }),
+            });
+            const jp = await rp.json().catch(() => null);
+            if (jp?.success) {
+              data = { success: true, message: jp.message || `Đã nhận qua proxy ${cc}` };
+            } else if (jp) {
+              data = { ...data, error: jp.error || data.error, proxyError: jp.proxyDisabled ? "proxy_disabled" : data.proxyError };
+            }
+            addLog({
+              level: jp?.success ? "success" : "warn",
+              message: jp?.success
+                ? `Đã nhận "${quest.name}" qua proxy ${cc}`
+                : `Proxy ${cc} không nhận được: ${jp?.error || jp?.message || "lỗi"}`,
+              timestamp: Date.now(),
+            });
+          } catch { /* giữ lỗi cũ */ }
+        }
+        if (data.success) break;
         break;
         // If proxy error (no_proxy or full), try next country
         if (data.proxyError === "full" || data.proxyError === "no_proxy") {
