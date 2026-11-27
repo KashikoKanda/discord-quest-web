@@ -4,6 +4,7 @@ import { useAppStore, type QuestData } from "@/lib/store";
 import { GUILD_INVITE_URL, REQUIRED_GUILD_ID } from "@/lib/guildConfig";
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 import { waitIfPaused, withSessionHandoff } from "@/lib/sessionGate";
+import { enrollQuestBrowser } from "@/lib/questActions";
 import { Button } from "@/components/ui/button";
 import { MotionSection } from "@/components/discord/MotionSection";
 import {
@@ -1212,27 +1213,31 @@ export default function HiddenQuests() {
           // Hai IP không được chồng lên nhau: web im lặng 8s, gửi đúng một
           // request enroll qua proxy nước quest, rồi im thêm 15s trước khi
           // hoạt động lại từ IP nhà.
-          addLog({ level: "info", message: `Tạm dừng 8s rồi nhận qua proxy ${cc} (không để 2 IP chồng nhau)`, timestamp: Date.now() });
-          const j = await withSessionHandoff(async () => {
-            const r = await fetch("/api/quests/hidden-enroll", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                token,
-                questId: quest.id,
-                countryCode: cc,
-                isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
-                questData: quest,
-              }),
-            });
-            return r.json();
-          });
-          if (j && typeof j === "object") data = j;
+          // Owner chốt 27/11/2026: "chỉ cần khác IP là cho cút" — đổi IP sang
+          // proxy để enroll làm Discord revoke token ngay, cả khi enroll thành
+          // công lẫn thất bại. Vì vậy nhận quest ẩn TỪ CHÍNH IP NHÀ, cùng phiên
+          // với trình duyệt. Quest khoá vùng khác sẽ bị Discord từ chối, nhưng
+          // token không bị revoke.
           addLog({
-            level: data?.success ? "success" : "warn",
-            message: data?.success
-              ? `Nhận qua proxy ${cc} xong — chờ 15s để phiên ổn định rồi mới dùng lại IP nhà`
-              : `Proxy ${cc} trả lỗi: ${data?.error || data?.message || "không rõ"}`,
+            level: "info",
+            message: `Nhận "${quest.name}" từ chính IP nhà (không đổi IP)`,
+            timestamp: Date.now(),
+          });
+          const r = await enrollQuestBrowser(token, quest.id, {
+            isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
+            questData: quest,
+          });
+          data = {
+            success: r.success,
+            message: r.message,
+            status: r.status,
+            error: r.success ? undefined : r.message,
+          };
+          addLog({
+            level: r.success ? "success" : "warn",
+            message: r.success
+              ? `Đã nhận "${quest.name}" từ IP nhà — token an toàn`
+              : `Không nhận được "${quest.name}": ${r.message}`,
             timestamp: Date.now(),
           });
         } catch { /* giữ lỗi cũ */ }
@@ -1312,19 +1317,12 @@ export default function HiddenQuests() {
 
           for (const altCc of altCountryCodes) {
             try {
-              // Variant cũng nhận qua proxy đúng nước, không qua IP nhà.
-              const altRes = await fetch("/api/quests/hidden-enroll", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  token,
-                  questId: altQuest.id,
-                  countryCode: altCc,
-                  isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
-                  questData: altQuest,
-                }),
+              // Variant cũng nhận từ IP nhà, không đổi IP.
+              const altR = await enrollQuestBrowser(token, altQuest.id, {
+                isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
+                questData: altQuest,
               });
-              const altData = await altRes.json();
+              const altData = { success: altR.success, message: altR.message, error: altR.success ? undefined : altR.message };
               if (altData.success) {
                 setEnrollResult((prev) => ({
                   ...prev,

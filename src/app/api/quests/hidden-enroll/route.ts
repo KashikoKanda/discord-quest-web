@@ -135,6 +135,22 @@ function proxiedRequest(
  * - Proxy tự trả về kho sau 5 phút không dùng
  */
 export async function POST(request: NextRequest) {
+
+  // Owner chốt 27/11/2026: "chỉ cần khác IP là cho cút" — mọi lần enroll qua
+  // proxy đều làm Discord revoke token ngay, thành công hay thất bại. Vì vậy
+  // đường proxy này mặc định ĐÓNG; chỉ bật lại khi thật sự muốn chấp nhận mất
+  // token bằng env ALLOW_REGION_PROXY=1.
+  if (process.env.ALLOW_REGION_PROXY !== "1") {
+    return NextResponse.json(
+      {
+        success: false,
+        proxyDisabled: true,
+        error:
+          "Nhận quest ẩn qua proxy đã tắt: đổi IP làm Discord revoke token ngay. Quest ẩn giờ nhận từ chính IP nhà.",
+      },
+      { status: 410 },
+    );
+  }
   // Proxy CHỈ dùng cho đúng request enroll quest ẩn khoá vùng: mở proxy theo
   // nước quest, enroll một request, đóng ngay, KHÔNG ghim vào token. Phiên
   // trình duyệt ở IP nhà vẫn chạy song song (owner chốt: giữ IP gốc).
