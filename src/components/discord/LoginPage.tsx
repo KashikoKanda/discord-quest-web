@@ -341,8 +341,46 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
     }
   };
 
+  const [authMode, setAuthMode] = useState<"token" | "email">("token");
+
+  // Hai lối vào: token (chạy hoàn toàn trong trình duyệt, IP nhà) và email +
+  // mật khẩu (bắt buộc đi qua server vì Discord chặn Origin lạ — xem ghi chú
+  // trong src/app/api/auth/password/route.ts).
+  const modeTabs = (
+    <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.07] bg-white/[0.04] p-1">
+      <button
+        type="button"
+        onClick={() => setAuthMode("token")}
+        className={`h-8 rounded-lg text-[11px] font-semibold transition-colors ${
+          authMode === "token" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"
+        }`}
+      >
+        Token
+      </button>
+      <button
+        type="button"
+        onClick={() => setAuthMode("email")}
+        className={`h-8 rounded-lg text-[11px] font-semibold transition-colors ${
+          authMode === "email" ? "bg-[#5865F2] text-white" : "text-white/50 hover:text-white/80"
+        }`}
+      >
+        Email &amp; mật khẩu
+      </button>
+    </div>
+  );
+
+  if (authMode === "email") {
+    return (
+      <div>
+        {modeTabs}
+        <EmailLogin onLoginSuccess={onLoginSuccess} parentLoading={loading} />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {modeTabs}
       <div className="flex items-center justify-between mb-2">
         <label className="text-[11px] font-semibold text-white/45 uppercase tracking-[0.14em]">
           Discord Token
