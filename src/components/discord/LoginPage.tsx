@@ -502,7 +502,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${preview ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"}`}>
       <div className="overflow-hidden">
       <Button
-        onClick={handleLogin}
+        onClick={() => handleLogin()}
         disabled={isLoading || !tokenInput.trim()}
         className="btn-shine group relative overflow-hidden w-full h-14 rounded-xl font-semibold text-[14px] text-white transition-all duration-300
                    bg-[linear-gradient(135deg,#5865F2_0%,#6D5BF6_45%,#8B5CF6_100%)]
