@@ -1201,16 +1201,33 @@ export default function HiddenQuests() {
     for (const cc of countryCodes) {
       lastCountryCode = cc;
       try {
-        // Nhận quest NGAY TRONG TRÌNH DUYỆT: request đi từ IP mạng nhà, không
-        // qua server/proxy. countryCode không còn tác dụng vì IP do máy quyết.
-        const res = await enrollQuestBrowser(token, quest.id, {
+        // (1) Thử từ IP NHÀ trước — phiên trình duyệt giữ nguyên, không ngắt IP gốc.
+        const local = await enrollQuestBrowser(token, quest.id, {
           isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
           questData: quest,
         });
-        data = { success: res.success, message: res.message };
+        data = { success: local.success, message: local.message };
         lastRes = null;
         if (data.success) break;
-        break; // chỉ thử một lần, IP nhà cố định
+        // (2) Quest khoá vùng: nhận qua proxy đúng nước quest — server mở proxy,
+        //     enroll đúng một request rồi đóng ngay, không ghim vào token.
+        try {
+          const r = await fetch("/api/quests/hidden-enroll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token,
+              questId: quest.id,
+              countryCode: cc,
+              isMobile: quest.type === "WATCH_VIDEO_ON_MOBILE",
+              questData: quest,
+            }),
+          });
+          const j = await r.json();
+          if (j && typeof j === "object") data = j;
+        } catch { /* giữ lỗi từ IP nhà */ }
+        if (data.success) break;
+        break;
         // If proxy error (no_proxy or full), try next country
         if (data.proxyError === "full" || data.proxyError === "no_proxy") {
           setProxyAvailability((prev) => ({

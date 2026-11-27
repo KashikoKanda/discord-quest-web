@@ -269,13 +269,10 @@ export default function Dashboard() {
   const startQuests = async () => {
     if (!token) return;
     const avail = quests.filter((q) => q.status === "available" || q.status === "enrolled").length;
+    // Owner: "mở khoá nút làm quest" — không chặn nút khi danh sách trống nữa.
+    // Trước đây bấm vào là phát laugh.mp3 rồi return, nhìn như nút bị khoá.
     if (avail === 0) {
-      try {
-        const audio = new Audio("/laugh.mp3");
-        audio.volume = 1.0;
-        audio.play().catch(() => {});
-      } catch { /* ignore */ }
-      return;
+      addLog({ level: "info", message: "Chưa có quest nào để làm — vẫn khởi động engine để chờ quest mới", timestamp: Date.now() });
     }
     try {
       if (QUESTS_PAUSED) { addLog({ level: "warn", message: "Tạm đóng xử lý quest, sẽ bật lại sau." } as never); return; }
