@@ -18,7 +18,6 @@
 import { randomUUID } from "node:crypto";
 import { initBuildVersion, getBuildVersion } from "./discord";
 import { pickRandomUA, pickSessionUA, buildSuperProperties, buildDiscordHeaders, type UABundle } from "./uaPool";
-import { fetchWithProxy } from "./proxyHelper";
 
 // Re-export for backwards compat
 export function getVersions() {
@@ -109,7 +108,7 @@ export async function discordPasswordLogin(opts: {
   const headers = buildDiscordHeaders(ua, superProps);
   // Sử dụng proxy pool — tránh IP server bị Discord rate-limit
   // (nhiều user dùng chung 1 IP server → Discord flag spam → yêu cầu captcha thật + lock)
-  const res = await fetchWithProxy(`${DISCORD_API}/auth/login`, {
+  const res = await fetch(`${DISCORD_API}/auth/login`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -139,7 +138,7 @@ export async function discordMfaVerify(opts: {
 
   const path = opts.method === "sms" ? "/auth/mfa/sms" : "/auth/mfa/totp";
   // Sử dụng proxy pool — tránh IP server bị Discord rate-limit
-  const res = await fetchWithProxy(`${DISCORD_API}${path}`, {
+  const res = await fetch(`${DISCORD_API}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify({

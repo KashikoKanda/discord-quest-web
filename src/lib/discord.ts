@@ -564,8 +564,9 @@ export async function discordFetch(
   // Đi qua proxy ĐÃ GHIM của token để cả phiên chỉ dùng một IP. Trước đây hàm này
   // gọi fetch() trần (IP server) trong khi login/enroll lại qua proxy ngẫu nhiên →
   // Discord thấy token xuất hiện từ nhiều IP và thu hồi phiên.
-  const { fetchWithTokenProxy } = await import("./proxyHelper");
-  const res = await fetchWithTokenProxy(tokenId, url, { ...options, headers });
+  // Owner chốt 27/11/2026: CHỈ request nhận quest ẩn được đi proxy. Mọi request
+  // mang token khác (auth, guild, nitro, worker) đi thẳng, không qua proxy nữa.
+  const res = await fetch(url, { ...options, headers });
   return res;
 }
 

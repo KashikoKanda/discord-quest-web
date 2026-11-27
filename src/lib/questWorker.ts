@@ -756,11 +756,9 @@ async function fetchActivityWithRetry(
   tokenId?: string,
 ): Promise<Response> {
   let last: Response | null = null;
-  const { fetchWithTokenProxy } = await import("./proxyHelper");
   for (let attempt = 1; attempt <= 2; attempt++) {
-    // discordsays cũng phải đi qua đúng IP của token: gọi trực tiếp từ IP server
-    // trong khi REST quest đang ở IP proxy là "cùng token, hai IP".
-    last = await fetchWithTokenProxy(tokenId, url, init);
+    // Không dùng proxy: proxy chỉ dành cho request nhận quest ẩn.
+    last = await fetch(url, init);
     if (last.ok) return last;
     if (attempt === 1) {
       await sleep(1500);

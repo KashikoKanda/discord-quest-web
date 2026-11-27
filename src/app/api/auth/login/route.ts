@@ -173,12 +173,7 @@ export async function POST(request: NextRequest) {
     // Pool tĩnh không có nước người dùng → tạo proxy đúng nước đó ngay tại chỗ.
     // Owner: login dùng proxy theo nước user nhưng KHÔNG duy trì, tạo thoải mái.
     if (clientCountry && !availableCountries.includes(clientCountry)) {
-      const eph = await getEphemeralProxy(clientCountry).catch(() => null);
-      if (eph) {
-        addTransientProxy(eph.entry);
-        availableCountries.push(clientCountry.toUpperCase());
-        console.log(`[Auth Login] Đã tạo proxy ${clientCountry} cho phiên login (${eph.entry.host}:${eph.entry.port}).`);
-      }
+      // ĐÃ GỠ: login không tạo proxy nữa (proxy chỉ dành cho nhận quest ẩn).
     }
 
     let countriesToTry: string[];
@@ -210,12 +205,9 @@ export async function POST(request: NextRequest) {
 
       // Login lấy proxy NGẪU NHIÊN trong pool — trùng proxy với người khác là
       // bình thường và không chiếm slot của quest ẩn.
+      // ĐÃ GỠ: không lấy proxy cho login. Đường này còn lại chỉ để báo lỗi,
+      // vì mọi login thật đều đã bị chặn ở guard clientOnly phía trên.
       let proxy: any = null;
-      try {
-        proxy = await pickLoginProxy(cc);
-      } catch {
-        proxy = null;
-      }
 
       if (!proxy) continue;
       usedProxy = true;

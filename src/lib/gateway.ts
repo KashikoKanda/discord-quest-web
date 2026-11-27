@@ -225,12 +225,12 @@ export async function connectGateway(
   // Giờ socket giữ trực tiếp từ server (miễn phí, không đứt, một IP cố định cho
   // suốt phiên), còn proxy chỉ dùng cho các request REST/enroll ngắn. Muốn quay
   // lại hành vi cũ thì đặt GATEWAY_VIA_PROXY=1.
-  const gatewayViaProxy = process.env.GATEWAY_VIA_PROXY === "1";
-  let wsAgent: unknown = undefined;
-  if (gatewayViaProxy) {
-    const { getStickyWsAgent } = await import("./proxyHelper");
-    wsAgent = await getStickyWsAgent(tokenId).catch(() => null);
-  }
+  // Ép trực tiếp: proxy chỉ dành cho request nhận quest ẩn (owner chốt 27/11/2026).
+  // Gateway WebSocket qua proxy từng đốt ~10 MB mỗi lần nối (gateway.discord.gg
+  // 297 MB / 28 request), nên không cho bật lại bằng env nữa.
+  // ĐÃ XOÁ nhánh proxy của gateway: chỉ request nhận quest ẩn mới được đi proxy.
+  const gatewayViaProxy = false;
+  const wsAgent: unknown = undefined;
 
   state.connectPromise = new Promise((resolve) => {
     try {
