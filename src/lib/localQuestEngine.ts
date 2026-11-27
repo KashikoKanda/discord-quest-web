@@ -261,14 +261,22 @@ export function startLocalEngine(
     try {
       const list = await api("/quests/@me");
       if (!list.ok) {
-        cb.log("error", `Không tải được danh sách quest (HTTP ${list.status})`);
+        // Nêu đúng lý do Discord từ chối để owner biết sửa gì (401 token chết,
+        // 403 thiếu identity, 429 rate limit...), không chỉ "không tải được".
+        const why = (list.json && (list.json.message || list.json.error)) || "";
+        cb.log("error", `Không tải được danh sách quest (HTTP ${list.status})${why ? ` — ${why}` : ""}`);
         return;
       }
       const all: Quest[] = list.json?.quests || [];
+      const expiredCount = all.filter((q) => isExpired(q)).length;
+      const claimedCount = all.filter((q) => q?.user_status?.claimed_at).length;
       const queue = all.filter((q) => !isExpired(q) && !q?.user_status?.claimed_at);
-      cb.log("info", `Tìm thấy ${all.length} quest, ${queue.length} còn dùng được`);
+      cb.log("info", `Discord trả ${all.length} quest: ${expiredCount} hết hạn, ${claimedCount} đã nhận thưởng, ${queue.length} chạy được`);
+      if (!queue.length) {
+        cb.log("warn", "Không có quest nào cần chạy — kiểm tra: đã nhận quest trong Discord chưa, quest còn hạn không");
+        return;
+      }
       cb.log("info", `Có ${queue.length} quest sẽ chạy`);
-      if (!queue.length) { cb.log("warn", "Không có quest nào cần chạy"); return; }
 
       const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
         while (queue.length && !stopped) {
