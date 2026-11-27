@@ -292,10 +292,31 @@ export default function Dashboard() {
       // duyệt, không qua server, không tốn dung lượng proxy.
       setWorkerStatus("running");
       addLog({ level: "info", message: "Chạy quest từ IP mạng thật của máy bạn (không qua proxy)", timestamp: Date.now() });
+      let progressed = 0;
       await startLocalEngine(token, {
         log: (level, message) => addLog({ level, message, timestamp: Date.now() }),
-        progress: (questId, progress, status) => updateQuestProgress(questId, progress, status as never),
+        progress: (questId, progress, status) => { progressed++; updateQuestProgress(questId, progress, status as never); },
       }, { concurrency: multiQuestEnabled ? 3 : 1 });
+      // Nếu engine trình duyệt không xử lý được quest nào, chạy tiếp bằng worker
+      // server — đúng cách file nguồn (questWorker + gateway) vẫn làm.
+      if (progressed === 0) {
+        addLog({ level: "warn", message: "Engine trình duyệt không xử lý được quest nào — chuyển sang worker server", timestamp: Date.now() });
+        try {
+          const r = await fetch("/api/quests/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, tokenId, isVerified, multiQuest: multiQuestEnabled }),
+          });
+          const d = await r.json().catch(() => ({}));
+          addLog({
+            level: d.success ? "info" : "error",
+            message: d.message || d.error || `Worker server trả HTTP ${r.status}`,
+            timestamp: Date.now(),
+          });
+        } catch (e) {
+          addLog({ level: "error", message: `Không gọi được worker server: ${e instanceof Error ? e.message : "lỗi mạng"}`, timestamp: Date.now() });
+        }
+      }
       setWorkerStatus("idle");
       void refreshQuests();
     } catch (err: unknown) { setWorkerStatus("idle"); addLog({ level: "error", message: err instanceof Error ? err.message : "Lỗi kết nối", timestamp: Date.now() }); }
