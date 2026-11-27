@@ -282,8 +282,10 @@ export default function Dashboard() {
     try {
       if (QUESTS_PAUSED) { addLog({ level: "warn", message: "Tạm đóng xử lý quest, sẽ bật lại sau." } as never); return; }
       if (isLocalEngineRunning()) {
-        addLog({ level: "warn", message: "Quest đang chạy trên máy bạn rồi", timestamp: Date.now() });
-        return;
+        // Lần chạy trước có thể đã dừng nhưng cờ chưa được nhả → bấm lại không
+        // có gì xảy ra. Ép dừng rồi khởi động lại thay vì chặn im lặng.
+        stopLocalEngine();
+        addLog({ level: "warn", message: "Dừng lượt chạy cũ để khởi động lại", timestamp: Date.now() });
       }
       // Owner chốt: xử lý quest chạy ở IP GỐC. Toàn bộ request enroll thường,
       // video-progress, heartbeat, gateway presence và claim đi thẳng từ trình

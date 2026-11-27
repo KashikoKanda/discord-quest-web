@@ -267,6 +267,7 @@ export function startLocalEngine(
       const all: Quest[] = list.json?.quests || [];
       const queue = all.filter((q) => !isExpired(q) && !q?.user_status?.claimed_at);
       cb.log("info", `Tìm thấy ${all.length} quest, ${queue.length} còn dùng được`);
+      cb.log("info", `Có ${queue.length} quest sẽ chạy`);
       if (!queue.length) { cb.log("warn", "Không có quest nào cần chạy"); return; }
 
       const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
@@ -285,5 +286,9 @@ export function startLocalEngine(
       closeGateway();
       activeStop = null;
     }
-  })();
+  })().catch((e: unknown) => {
+    // Bất kỳ lỗi nào cũng phải nhả cờ, nếu không lần bấm sau bị coi là đang chạy.
+    activeStop = null;
+    cb.log("error", `Engine dừng do lỗi: ${e instanceof Error ? e.message : String(e)}`);
+  });
 }
