@@ -171,6 +171,7 @@ export default function Settings() {
     autoQuestEnabled, setAutoQuestEnabled,
     multiQuestEnabled, setMultiQuestEnabled,
     hideQuestBanners, setHideQuestBanners,
+    compactQuests, setCompactQuests,
     workerStatus,
     orbsBalance,
   } = useAppStore();
@@ -637,25 +638,25 @@ export default function Settings() {
           <AnimatedSection delay={140}>
             <div className="surface rounded-2xl overflow-hidden">
               <div className="px-4 sm:px-6 py-3 border-b border-white/[0.04]">
-                <h3 className="text-[13px] font-semibold text-white">Hình ảnh quest</h3>
+                <h3 className="text-[13px] font-semibold text-white">Chế độ tối giản</h3>
               </div>
               <div className="p-4 sm:p-5">
                 <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.05]">
                   <div className="min-w-0 pr-3">
-                    <p className="text-[13px] font-medium text-white">Không tải banner</p>
+                    <p className="text-[13px] font-medium text-white">{compactQuests ? "Tối giản" : "Đầy đủ"}</p>
                     <p className="text-[11px] text-white/45 mt-0.5 leading-relaxed">
-                      Bật để quest không tải ảnh bìa, đỡ tốn dung lượng. Chỉ ảnh hưởng hiển thị, thông số quest giữ nguyên.
+                      Bật: thẻ quest gọn, không tải ảnh bìa nên đỡ tốn dung lượng. Tắt: hiện đầy đủ như cũ. Chỉ ảnh hưởng hiển thị.
                     </p>
                   </div>
                   <button
-                    onClick={() => setHideQuestBanners(!hideQuestBanners)}
-                    aria-label="Bật tắt banner quest"
+                    onClick={() => setCompactQuests(!compactQuests)}
+                    aria-label="Bật tắt chế độ tối giản"
                     className="shrink-0 relative w-11 h-6 rounded-full transition-colors duration-200"
-                    style={{ backgroundColor: hideQuestBanners ? "#5E6AD2" : "rgba(255,255,255,0.1)" }}
+                    style={{ backgroundColor: compactQuests ? "#5E6AD2" : "rgba(255,255,255,0.1)" }}
                   >
                     <div
                       className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200"
-                      style={{ transform: hideQuestBanners ? "translateX(22px)" : "translateX(2px)" }}
+                      style={{ transform: compactQuests ? "translateX(22px)" : "translateX(2px)" }}
                     />
                   </button>
                 </div>

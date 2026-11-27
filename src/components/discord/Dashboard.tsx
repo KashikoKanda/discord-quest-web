@@ -152,26 +152,10 @@ export default function Dashboard() {
   const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
   const [tokenId, setTokenId] = useState<string>(() => token ? `t_${token.slice(0, 16)}` : "main");
   const [questFilter, setQuestFilter] = useState<QuestFilter>("all");
-  // Persist compactMode theo UID user vào localStorage — không mất khi reload
-  const [compactMode, setCompactModeState] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    const uid = profile?.id || "main";
-    return localStorage.getItem(`dq_compact_${uid}`) === "true";
-  });
-  const setCompactMode = useCallback((next: boolean) => {
-    setCompactModeState(next);
-    try {
-      const uid = profile?.id || "main";
-      localStorage.setItem(`dq_compact_${uid}`, String(next));
-    } catch { /* ignore */ }
-  }, [profile?.id]);
-  // Khi đổi user (login UID khác) → reload compact mode từ storage
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const uid = profile?.id || "main";
-    const stored = localStorage.getItem(`dq_compact_${uid}`) === "true";
-    setCompactModeState(stored);
-  }, [profile?.id]);
+  // Chế độ tối giản giờ nằm trong Settings (store.compactQuests) — một nguồn
+  // duy nhất, không còn nút riêng trên header dashboard.
+  const compactMode = useAppStore((st) => st.compactQuests);
+  const setCompactMode = useAppStore((st) => st.setCompactQuests);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const checkTokenExpired = useCallback((res: Response, data?: Record<string, unknown>) => {
@@ -592,20 +576,6 @@ export default function Dashboard() {
                 <FilterTab active={questFilter === "video"} color={FILTER_COLORS.video} onClick={() => setQuestFilter("video")} icon={<Video className="w-3.5 h-3.5" />} />
                 <FilterTab active={questFilter === "game"} color={FILTER_COLORS.game} onClick={() => setQuestFilter("game")} icon={<Gamepad2 className="w-3.5 h-3.5" />} />
               </div>
-              {/* Toggle banner — fixed width để nút không thay đổi size khi chữ đổi */}
-              <button
-                onClick={() => setCompactMode(!compactMode)}
-                className="flex items-center justify-center gap-1.5 px-3 h-7 rounded-md text-[11px] font-semibold transition-colors border"
-                style={{
-                  width: '92px',
-                  backgroundColor: compactMode ? "rgba(94,106,210,0.10)" : "rgba(94,106,210,0.15)",
-                  borderColor: compactMode ? "rgba(94,106,210,0.20)" : "rgba(94,106,210,0.35)",
-                  color: "#5E6AD2",
-                }}
-                title={compactMode ? "Chế độ Tối giản — click để chuyển sang Đầy đủ" : "Chế độ Đầy đủ — click để chuyển sang Tối giản"}
-              >
-                {compactMode ? "Đầy đủ" : "Tối giản"}
-              </button>
             </div>
           </div>
 
