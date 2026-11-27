@@ -32,10 +32,18 @@ export default function DevGuard() {
     window.addEventListener("keydown", onKey, true);
     document.addEventListener("contextmenu", noCtx, true);
 
+    // Chỉ dò trên máy có chuột thật: trình duyệt điện thoại luôn có chênh lệch
+    // outer/inner vì thanh địa chỉ, nếu dò ở đó sẽ phủ màn hình oan.
+    const finePointer = window.matchMedia("(pointer: fine)").matches;
+    let hits = 0;
+    const startedAt = Date.now();
     const timer = window.setInterval(() => {
+      if (!finePointer || document.hidden || Date.now() - startedAt < 3000) return;
       const wGap = Math.abs(window.outerWidth - window.innerWidth);
       const hGap = Math.abs(window.outerHeight - window.innerHeight);
-      setOpen(wGap > 180 || hGap > 240);
+      // Cần 2 lần liên tiếp mới kết luận, tránh nháy khi resize cửa sổ.
+      hits = wGap > 200 || hGap > 260 ? hits + 1 : 0;
+      if (hits >= 2) setOpen(true);
     }, 1200);
 
     return () => {
