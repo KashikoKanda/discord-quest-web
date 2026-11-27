@@ -1046,6 +1046,19 @@ export default function HiddenQuests() {
   // This ensures the lock state is accurate even if user left the guild
   useEffect(() => {
     if (!token) return;
+    // Mỗi lần mở trang trước đây đều bắn request mang token lên Discord. Giờ
+    // dùng cache 12 giờ: mở lại trang không gọi Discord nữa.
+    try {
+      const raw = localStorage.getItem(`dqa_guild_${token.slice(0, 16)}`);
+      if (raw) {
+        const c = JSON.parse(raw) as { member?: boolean; name?: string | null; icon?: string | null; at?: number };
+        if (c && typeof c.at === "number" && Date.now() - c.at < 12 * 3600 * 1000) {
+          setGuildMember(c.member === true, c.name ?? null, c.icon ?? null);
+          setGuildCheckLoading(false);
+          return;
+        }
+      }
+    } catch { /* cache hỏng thì kiểm lại */ }
     setGuildCheckLoading(true);
     // Kiểm tra membership NGAY TRONG TRÌNH DUYỆT bằng IP thật của máy.
     // Dùng /users/@me/guilds: một request duy nhất, trả luôn id + tên + icon,
@@ -1076,32 +1089,23 @@ export default function HiddenQuests() {
               setGuildMember(false, null, null);
             }
             decided = true;
+            try {
+              localStorage.setItem(`dqa_guild_${token.slice(0, 16)}`, JSON.stringify({
+                member: !!hit,
+                name: hit?.name ?? null,
+                icon: hit?.icon
+                  ? `https://cdn.discordapp.com/icons/${REQUIRED_GUILD_ID}/${hit.icon}.png?size=128`
+                  : null,
+                at: Date.now(),
+              }));
+            } catch { /* không lưu được thì thôi */ }
           }
         }
       } catch {
         /* trình duyệt bị chặn → thử các đường sau */
       }
-      if (!decided) {
-        try {
-          await waitIfPaused();
-          const g = await fetch(
-            `https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`,
-            { headers: buildDiscordHeaders(token), cache: "no-store" },
-          );
-          if (g.status === 200) {
-            const info = await g.json().catch(() => null);
-            const icon = info?.icon
-              ? `https://cdn.discordapp.com/icons/${REQUIRED_GUILD_ID}/${info.icon}.png?size=128`
-              : null;
-            setGuildMember(true, info?.name || null, icon);
-            decided = true;
-          }
-          // 403/404 ở đây KHÔNG khoá nữa: Discord trả 403 cả khi chỉ thiếu quyền
-          // và 429 khi rate limit, nên đây là lý do "đã vào guild mà vẫn bị lock".
-        } catch {
-          /* im lặng */
-        }
-      }
+      // ĐÃ BỎ request /guilds/<id>: chỉ dùng /users/@me/guilds, một request duy
+      // nhất, kết quả cache 12h. Không xác định được thì giữ nguyên trạng thái.
       // KHÔNG còn fallback qua /api/auth/guild-check: endpoint đó để server gọi
       // Discord bằng token từ proxy, tạo cảnh "cùng token hai client" và Discord
       // thu hồi ngay khi mở trang quest ẩn. Không xác định được thì giữ nguyên.
@@ -1280,10 +1284,8 @@ export default function HiddenQuests() {
         message: `Đã nhận quest ẩn "${quest.name}"`,
         timestamp: Date.now(),
       });
-      // Hiện "Đã nhận" trên banner 0.5s rồi reload quest ẩn
-      setTimeout(() => {
-        ensureDashboardLoaded().then((ids) => fetchHiddenQuests(ids));
-      }, 500);
+      // KHÔNG tải lại /quests/@me sau khi nhận: thẻ quest đã báo "Đã nhận",
+      // mỗi lần tải lại là thêm một request mang token không cần thiết.
     } else {
       // Phân loại lỗi theo discordCode để hiển thị message có ý nghĩa
       const isAccountIneligible = data.discordCode === 403 || data.discordCode === 50001 || data.discordCode === 50000;
@@ -1306,58 +1308,17 @@ export default function HiddenQuests() {
           timestamp: Date.now(),
         });
       } else if (is404) {
-        // 404 "Unknown Quest" → thử enroll variant khác cùng tên
-        const sameNameQuests = quests.filter(q => q.name === quest.name && q.id !== quest.id);
-        let enrolled = false;
-        for (const altQuest of sameNameQuests) {
-          const altRegionInfo = getQuestRegionInfo(altQuest);
-          const altCountryCodes = altRegionInfo.type === "regional" && altRegionInfo.regions.length > 0
-            ? [altRegionInfo.regions[0]]
-            : [Math.random() < 0.5 ? "US" : "GB"];
-
-          for (const altCc of altCountryCodes) {
-            try {
-              // Variant cũng nhận từ IP nhà, không đổi IP.
-              const altR = await enrollQuestBrowser(token, altQuest.id, {
-                isMobile: altQuest.type === "WATCH_VIDEO_ON_MOBILE",
-                questData: altQuest,
-              });
-              const altData = { success: altR.success, message: altR.message, error: altR.success ? undefined : altR.message };
-              if (altData.success) {
-                setEnrollResult((prev) => ({
-                  ...prev,
-                  [quest.id]: { success: true, message: `Đã nhận qua variant ${altQuest.id.slice(-6)}` },
-                }));
-                addLog({
-                  level: "success",
-                  message: `Đã nhận quest ẩn "${quest.name}" qua variant ${altQuest.id.slice(-6)}`,
-                  timestamp: Date.now(),
-                });
-                setTimeout(() => {
-                  ensureDashboardLoaded().then((ids) => fetchHiddenQuests(ids));
-                }, 500);
-                enrolled = true;
-                break;
-              }
-              // proxy error → try next country
-              if (altData.proxyError === "full" || altData.proxyError === "no_proxy") continue;
-              // other error → stop this variant
-              break;
-            } catch { /* tiếp tục thử variant khác */ }
-          }
-          if (enrolled) break;
-        }
-        if (!enrolled) {
-          setEnrollResult((prev) => ({
-            ...prev,
-            [quest.id]: { success: false, message: data.error || "Quest không thể nhận — tất cả variant đều lỗi" },
-          }));
-          addLog({
-            level: "error",
-            message: `Không thể tìm thấy quest "${quest.name}" — ${data.error || "không có variant hợp lệ"}`,
-            timestamp: Date.now(),
-          });
-        }
+        // ĐÃ BỎ vòng thử variant: mỗi variant là thêm một request enroll mang
+        // token. Discord trả 404 thì báo luôn, không bắn thêm.
+        setEnrollResult((prev) => ({
+          ...prev,
+          [quest.id]: { success: false, message: data.error || "Discord không tìm thấy quest này" },
+        }));
+        addLog({
+          level: "error",
+          message: `Discord không tìm thấy quest "${quest.name}" — không thử variant nữa`,
+          timestamp: Date.now(),
+        });
       } else {
         // Lỗi khác — hiển thị message từ server
         setEnrollResult((prev) => ({
