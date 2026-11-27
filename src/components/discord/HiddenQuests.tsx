@@ -674,6 +674,7 @@ interface ProxyStats {
 
 export default function HiddenQuests() {
   const { setSidebarOpen, quests: dashboardQuests, token, isVerified, isGuildMember, guildCheckLoading, guildCheckedOnce, guildName, guildIcon, addLog, setGuildMember, setGuildCheckLoading, excludedQuestIds } = useAppStore();
+  const compactQuests = useAppStore((st) => st.compactQuests);
   // true ngay từ lần render đầu cho tới khi kiểm tra guild xong: chặn việc lóe
   // thẻ "Chỉ dành cho thành viên" trong lúc chờ Discord trả lời.
   const [checking, setChecking] = useState(true);
@@ -1607,7 +1608,7 @@ export default function HiddenQuests() {
         <MotionSection className="px-3 sm:px-4 lg:px-6 pb-4 sm:pb-6" delay={0.12}>
           {loading && quests.length === 0 ? (
             /* Skeleton shimmer cards - Aurora surface */
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 lg:gap-4">
+            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactQuests ? "grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="surface rounded-xl overflow-hidden animate-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
                   {/* Banner skeleton */}
@@ -1655,7 +1656,7 @@ export default function HiddenQuests() {
               <p className="text-[9px] sm:text-[11px] text-white/40">Tất cả quest đã có trong tài khoản hoặc không khả dụng</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 lg:gap-4">
+            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactQuests ? "grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
               {filteredQuests.map((q, idx) => (
                 <div
                   key={q.id}

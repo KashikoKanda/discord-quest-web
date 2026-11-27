@@ -599,7 +599,7 @@ export default function Dashboard() {
               <p className="text-[12px] text-white/40 mt-1">Nhấn Làm mới để tải quest</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 lg:gap-4">
+            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactMode ? "grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
               {allQuestsSorted.map((q, idx) => (
                 <div
                   key={q.id}
