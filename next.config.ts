@@ -42,6 +42,11 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: "frame-ancestors 'self';",
           },
+          {
+            // Ép HTTPS: token/phiên không bao giờ đi qua kết nối trơn.
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains",
+          },
         ],
       },
     ];

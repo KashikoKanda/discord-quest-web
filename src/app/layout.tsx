@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { MotionConfigProvider } from "@/components/discord/MotionConfigProvider";
+import DevGuard from "@/components/DevGuard";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -26,7 +27,9 @@ export const metadata: Metadata = {
   title: "Discord Quest Auto — Aurora",
   description: "Automate Discord quests with elegance. Run multiple tokens simultaneously with real-time monitoring.",
   icons: {
-    icon: "https://discord.com/favicon.ico",
+    icon: [{ url: "/icon.png", type: "image/png" }],
+    shortcut: "/icon.png",
+    apple: "/apple-icon.png",
   },
 };
 
@@ -43,6 +46,7 @@ export default function RootLayout({
           fontFamily: "var(--font-sans), 'Inter', system-ui, sans-serif",
         }}
       >
+        <DevGuard />
         <MotionConfigProvider>{children}</MotionConfigProvider>
         <Toaster />
       </body>
