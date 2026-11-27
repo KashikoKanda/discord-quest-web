@@ -158,6 +158,9 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   proxyCountry: string;
 }) {
   const [tokenInput, setTokenInput] = useState("");
+  const [savedToken, setSavedToken] = useState<string>(() => {
+    try { return localStorage.getItem("dqa_last_token") || ""; } catch { return ""; }
+  });
   const [showToken, setShowToken] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -169,8 +172,9 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
   const [previewError, setPreviewError] = useState("");
   const [platform, setPlatform] = useState<"pc" | "android">("pc");
 
-  const handleLogin = async () => {
-    if (!tokenInput.trim()) { setError("Vui lòng nhập Discord token"); return; }
+  const handleLogin = async (overrideToken?: string) => {
+    const tk = (overrideToken ?? tokenInput).trim();
+    if (!tk) { setError("Vui lòng nhập Discord token"); return; }
     setLoading(true);
     setError("");
     setStatus("connecting");
@@ -182,7 +186,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       // quá lâu thì báo rõ thay vì quay vòng "Đang xử lý..." mãi.
       // Xác thực token NGAY TRONG TRÌNH DUYỆT: request đi từ IP mạng thật của
       // máy, không qua Render cũng không qua proxy. Server chỉ tạo phiên.
-      const local = await verifyTokenLocal(tokenInput.trim());
+      const local = await verifyTokenLocal(tk);
       if (!local.ok) {
         setError(
           local.status === 0
@@ -195,16 +199,18 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
         setLoading(false);
         return;
       }
-      const serverProfile = await registerSessionLocal(tokenInput.trim(), local.profile!, platform);
+      const serverProfile = await registerSessionLocal(tk, local.profile!, platform);
+      // Nhớ token để lần sau đăng nhập một chạm (deploy xoá phiên là bấm lại được ngay).
+      try { localStorage.setItem("dqa_last_token", tk); } catch { /* chế độ riêng tư thì thôi */ }
       setStatus("connected");
-      onLoginSuccess(tokenInput.trim(), (serverProfile || local.profile)!);
+      onLoginSuccess(tk, (serverProfile || local.profile)!);
       setLoading(false);
       return;
       // eslint-disable-next-line no-unreachable
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tokenInput.trim(), proxyCountry, platform }),
+        body: JSON.stringify({ token: tk, proxyCountry, platform }),
         signal: AbortSignal.timeout(120000),
       });
       let data: any;
@@ -228,7 +234,7 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
       }
       // Login success
       setStatus("connected");
-      onLoginSuccess(tokenInput.trim(), data.profile);
+      onLoginSuccess(tk, data.profile);
     } catch (err: any) {
       const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
       setError(
@@ -349,6 +355,18 @@ function TokenLogin({ onLoginSuccess, parentLoading, proxyCountry }: {
           </span>
         </div>
       </div>
+
+      {savedToken && !tokenInput && (
+        <button
+          type="button"
+          onClick={() => { setTokenInput(savedToken); handleLogin(savedToken); }}
+          className="mb-3 flex w-full items-center gap-2 rounded-xl border border-[#5865F2]/30 bg-[#5865F2]/10 px-3 h-10 text-[12px] font-semibold text-[#B9BFFF] hover:bg-[#5865F2]/20 transition-colors"
+        >
+          <KeyRound className="w-4 h-4 shrink-0" />
+          <span className="flex-1 text-left truncate">Đăng nhập lại ngay · token …{savedToken.slice(-6)}</span>
+          <span className="text-[11px] font-normal text-white/40">1 chạm</span>
+        </button>
+      )}
 
       {/* Dự phòng: dữ liệu thiết bị lấy từ Console — ẩn mặc định, chỉ hiện khi cần */}
       <div className="mb-3">
