@@ -299,8 +299,20 @@ export default function Dashboard() {
       }, { concurrency: multiQuestEnabled ? 3 : 1 });
       // Nếu engine trình duyệt không xử lý được quest nào, chạy tiếp bằng worker
       // server — đúng cách file nguồn (questWorker + gateway) vẫn làm.
-      if (progressed === 0) {
-        addLog({ level: "warn", message: "Engine trình duyệt không xử lý được quest nào — chuyển sang worker server", timestamp: Date.now() });
+      // Bằng chứng từ DevTools của owner: POST /quests/<id>/heartbeat từ trình
+      // duyệt trả 401, còn preflight OPTIONS của /quests/<id>/claim trả 404 nên
+      // trình duyệt KHÔNG gửi được request claim. Hai việc này buộc phải chạy ở
+      // server (đúng như questWorker của file nguồn). Vì vậy chuyển sang worker
+      // server không chỉ khi 0 quest, mà cả khi còn quest chưa xong.
+      const unfinished = quests.filter((q) => q.status === "available" || q.status === "enrolled" || q.status === "running").length;
+      if (progressed === 0 || unfinished > 0) {
+        addLog({
+          level: "warn",
+          message: progressed === 0
+            ? "Engine trình duyệt không xử lý được quest nào — chuyển sang worker server"
+            : `Còn ${unfinished} quest chưa xong (heartbeat/claim bị Discord chặn từ trình duyệt) — chuyển sang worker server`,
+          timestamp: Date.now(),
+        });
         try {
           const r = await fetch("/api/quests/start", {
             method: "POST",
