@@ -428,8 +428,8 @@ const QuestCard16x9 = memo(function QuestCard16x9({
         height: '100%',
       }}
     >
-      {/* Banner: tối giản thì thu về dải mỏng, không tải ảnh */}
-      <div className={`relative w-full bg-[#11131A] ${compactMode ? "h-9" : "aspect-video"}`}>
+      {/* Banner: tối giản thì ẩn HẲN (không dải mỏng, không tải ảnh) */}
+      <div className={`relative w-full bg-[#11131A] aspect-video ${compactMode ? "hidden" : ""}`}>
         {/* Placeholder gradient */}
         <div
           className="absolute inset-0"
@@ -1053,7 +1053,9 @@ export default function HiddenQuests() {
       let decided = false;
       try {
         const r = await fetch("https://discord.com/api/v9/users/@me/guilds", {
-          headers: { Authorization: token },
+          // Dùng đúng bộ header thiết bị đã dán từ Console: thiếu identity thì
+          // Discord dễ trả 401/429, và trước đây rơi xuống nhánh dưới rồi khoá oan.
+          headers: buildDiscordHeaders(token),
           cache: "no-store",
         });
         if (r.ok) {
@@ -1080,7 +1082,7 @@ export default function HiddenQuests() {
         try {
           const g = await fetch(
             `https://discord.com/api/v9/guilds/${REQUIRED_GUILD_ID}?with_counts=true`,
-            { headers: { Authorization: token }, cache: "no-store" },
+            { headers: buildDiscordHeaders(token), cache: "no-store" },
           );
           if (g.status === 200) {
             const info = await g.json().catch(() => null);
@@ -1089,10 +1091,9 @@ export default function HiddenQuests() {
               : null;
             setGuildMember(true, info?.name || null, icon);
             decided = true;
-          } else if (g.status === 403 || g.status === 404) {
-            setGuildMember(false, null, null);
-            decided = true;
           }
+          // 403/404 ở đây KHÔNG khoá nữa: Discord trả 403 cả khi chỉ thiếu quyền
+          // và 429 khi rate limit, nên đây là lý do "đã vào guild mà vẫn bị lock".
         } catch {
           /* im lặng */
         }
@@ -1608,7 +1609,7 @@ export default function HiddenQuests() {
         <MotionSection className="px-3 sm:px-4 lg:px-6 pb-4 sm:pb-6" delay={0.12}>
           {loading && quests.length === 0 ? (
             /* Skeleton shimmer cards - Aurora surface */
-            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactQuests ? "grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
+            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactQuests ? "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="surface rounded-xl overflow-hidden animate-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
                   {/* Banner skeleton */}
@@ -1656,7 +1657,7 @@ export default function HiddenQuests() {
               <p className="text-[9px] sm:text-[11px] text-white/40">Tất cả quest đã có trong tài khoản hoặc không khả dụng</p>
             </div>
           ) : (
-            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactQuests ? "grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
+            <div className={`grid gap-2.5 sm:gap-3 lg:gap-4 ${compactQuests ? "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
               {filteredQuests.map((q, idx) => (
                 <div
                   key={q.id}

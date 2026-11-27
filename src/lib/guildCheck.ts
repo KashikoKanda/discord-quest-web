@@ -42,7 +42,9 @@ export async function checkGuildMembership(token: string): Promise<GuildResult |
       const info = await g.json().catch(() => null);
       return { member: true, name: info?.name || null, icon: iconUrl(info?.icon) };
     }
-    if (g.status === 403 || g.status === 404) return { member: false, name: null, icon: null };
+    // 403/404 ở endpoint này KHÔNG đủ để kết luận không phải thành viên: Discord
+    // trả 403 cả khi chỉ thiếu quyền, và 429 khi bị rate limit. Kết luận "không
+    // phải member" chỉ lấy từ danh sách /users/@me/guilds ở trên.
   } catch {
     /* im lặng */
   }
