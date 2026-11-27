@@ -645,7 +645,7 @@ export default function Settings() {
                   <div className="min-w-0 pr-3">
                     <p className="text-[13px] font-medium text-white">{compactQuests ? "Tối giản" : "Đầy đủ"}</p>
                     <p className="text-[11px] text-white/45 mt-0.5 leading-relaxed">
-                      Bật: thẻ quest gọn, không tải ảnh bìa nên đỡ tốn dung lượng. Tắt: hiện đầy đủ như cũ. Chỉ ảnh hưởng hiển thị.
+                      Bật tắt hiển thị đầy đủ
                     </p>
                   </div>
                   <button
