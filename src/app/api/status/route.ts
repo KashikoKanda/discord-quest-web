@@ -14,14 +14,19 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const blockedMs = proxyAuthBlockedFor();
-  // Công tắc đóng web (MAINTENANCE_MODE) hoặc cầu dao 407 của proxy.
+  // maintenance = CHỈ công tắc đóng web thủ công (MAINTENANCE_MODE).
+  // Cầu dao 407 của proxy KHÔNG được khoá UI nữa: login, tải quest, nhận quest
+  // thường/ẩn đều chạy trong trình duyệt từ IP mạng nhà, không cần proxy.
+  // Trước đây chỉ cần một request proxy ăn 407 là cả trang bị panel bảo trì.
   const manual = isMaintenance();
-  const maintenance = manual || blockedMs > 0;
   return NextResponse.json({
     success: true,
-    maintenance,
-    reason: manual ? MAINTENANCE_MESSAGE : maintenance ? "Hệ thống đang bảo trì, vui lòng quay lại sau ít phút." : null,
-    retryInSeconds: manual ? 0 : maintenance ? Math.ceil(blockedMs / 1000) : 0,
+    maintenance: manual,
+    reason: manual ? MAINTENANCE_MESSAGE : null,
+    retryInSeconds: 0,
+    proxyBlocked: blockedMs > 0,
+    proxyRetryInSeconds: blockedMs > 0 ? Math.ceil(blockedMs / 1000) : 0,
     checkedAt: new Date().toISOString(),
   });
+});
 }
