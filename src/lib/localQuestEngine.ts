@@ -259,7 +259,14 @@ export function startLocalEngine(
 
   return (async () => {
     try {
-      const list = await api("/quests/@me");
+      // Thử tối đa 3 lần: Discord hay trả 429/5xx khi vừa mở trang, và một lần
+      // lỗi trước đây làm engine kết luận "0 quest" rồi dừng ngay.
+      let list = await api("/quests/@me");
+      for (let attempt = 2; attempt <= 3 && (!list.ok || !(list.json?.quests?.length)); attempt++) {
+        await sleep(1200 * attempt);
+        const retry = await api(`/quests/@me?t=${Date.now()}`);
+        if (retry.ok) list = retry;
+      }
       if (!list.ok) {
         // Nêu đúng lý do Discord từ chối để owner biết sửa gì (401 token chết,
         // 403 thiếu identity, 429 rate limit...), không chỉ "không tải được".
@@ -273,7 +280,8 @@ export function startLocalEngine(
       const queue = all.filter((q) => !isExpired(q) && !q?.user_status?.claimed_at);
       cb.log("info", `Discord trả ${all.length} quest: ${expiredCount} hết hạn, ${claimedCount} đã nhận thưởng, ${queue.length} chạy được`);
       if (!queue.length) {
-        cb.log("warn", "Không có quest nào cần chạy — kiểm tra: đã nhận quest trong Discord chưa, quest còn hạn không");
+        const raw = JSON.stringify(list.json || {}).slice(0, 240);
+        cb.log("warn", `Không có quest nào chạy được. Discord trả: ${raw}`);
         return;
       }
       cb.log("info", `Có ${queue.length} quest sẽ chạy`);
