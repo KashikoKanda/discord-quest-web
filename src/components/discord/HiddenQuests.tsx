@@ -394,7 +394,9 @@ const QuestCard16x9 = memo(function QuestCard16x9({
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const hideQuestBanners = useAppStore((st) => st.hideQuestBanners);
-  const bannerUrl = hideQuestBanners ? undefined : quest.bannerUrl;
+  const compactMode = useAppStore((st) => st.compactQuests);
+  // Tối giản hoặc tắt banner → không tải ảnh bìa
+  const bannerUrl = hideQuestBanners || compactMode ? undefined : quest.bannerUrl;
 
   const questName = quest.name || "Quest";
   const gameTitle = quest.gameTitle || null;
@@ -426,8 +428,8 @@ const QuestCard16x9 = memo(function QuestCard16x9({
         height: '100%',
       }}
     >
-      {/* 16:9 Banner Area */}
-      <div className="relative aspect-video w-full bg-[#11131A]">
+      {/* Banner: tối giản thì thu về dải mỏng, không tải ảnh */}
+      <div className={`relative w-full bg-[#11131A] ${compactMode ? "h-9" : "aspect-video"}`}>
         {/* Placeholder gradient */}
         <div
           className="absolute inset-0"
@@ -460,11 +462,13 @@ const QuestCard16x9 = memo(function QuestCard16x9({
                   : "linear-gradient(135deg, rgba(148, 155, 164, 0.3) 0%, rgba(148, 155, 164, 0.1) 40%, #11131A 100%)",
               }}
             >
-              <div className="absolute inset-0 flex items-center justify-center opacity-20">
-                <div style={{ color: statusColor }}>
-                  {isGame ? <Gamepad2 className="w-10 h-10" /> : <Video className="w-10 h-10" />}
+              {!compactMode && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                  <div style={{ color: statusColor }}>
+                    {isGame ? <Gamepad2 className="w-10 h-10" /> : <Video className="w-10 h-10" />}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -902,7 +906,11 @@ export default function HiddenQuests() {
             rewardIconUrl: reward?.orb_quantity
               ? "https://discordquest.com/discord/quests/orbs.webp"
               : reward?.asset
-              ? `https://cdn.discordapp.com/quests/${q.id}/${reward.asset}?format=webp`
+              ? `https://cdn.discordapp.com/${
+                  String(reward.asset).startsWith("quests/")
+                    ? String(reward.asset)
+                    : `quests/${q.id}/${reward.asset}`
+                }?format=webp`
               : undefined,
             bannerUrl: heroAsset ? `/api/quests/banner?questId=${encodeURIComponent(q.id)}&hero=${encodeURIComponent(heroAsset)}` : undefined,
             applicationId: q.config?.application?.id || null,
