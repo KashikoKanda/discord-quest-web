@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { QuestWorker } from "@/lib/questWorker";
 import { assignProxy } from "@/lib/proxyPool";
-import { getOrCreateProxy } from "@/lib/proxyFactory";
+import { getOrCreateProxy, releaseFactoryProxy } from "@/lib/proxyFactory";
 import { getStickyProxy } from "@/lib/proxyHelper";
 import { buildSuperProperties } from "@/lib/discord";
 import { isGatewayReady, getSuperProperties, getUserAgent } from "@/lib/gateway";
@@ -348,9 +348,10 @@ export async function POST(request: NextRequest) {
       error: discordError.message,
     });
     } finally {
-      // Destroy HTTP agent (releases the TCP socket), but ProxyPool assignment stays
-      // The pool assignment tracks the logical SID binding, not the TCP connection
+      // Đóng NGAY sau đúng một request enroll: huỷ socket và bỏ proxy khỏi cache
+      // của factory để lần sau mở proxy mới, không giữ phiên nào cho token này.
       try { agent.destroy(); } catch {}
+      try { releaseFactoryProxy(tokenId, countryCode); } catch {}
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
