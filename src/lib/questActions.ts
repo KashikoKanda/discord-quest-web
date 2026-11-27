@@ -29,7 +29,11 @@ export async function enrollQuestBrowser(
   try {
     const res = await fetch(`${API}/quests/${questId}/enroll`, {
       method: "POST",
-      headers: { ...buildDiscordHeaders(token), AndroidRequest: isMobile ? "true" : "false" },
+      // KHÔNG gửi AndroidRequest: header này không có trong
+      // access-control-allow-headers của Discord nên preflight bị chặn và
+      // trình duyệt không gửi được request enroll. Loại client đã nằm trong
+      // x-super-properties của dữ liệu thiết bị.
+      headers: buildDiscordHeaders(token),
       body,
       cache: "no-store",
     });

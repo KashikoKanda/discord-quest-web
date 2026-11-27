@@ -80,9 +80,14 @@ export function buildDiscordHeaders(token: string, extra?: Record<string, string
 
   // 1:1 — chép nguyên bộ header thật của Discord, chỉ bỏ header trình duyệt
   // cấm set (user-agent, sec-*) vì browser tự gửi bản đúng của máy.
+  // CHỈ những header nằm trong access-control-allow-headers mà discord.com trả về
+  // (owner dán capture DevTools 27/11/2026). Header ngoài danh sách này làm
+  // preflight OPTIONS thất bại nên trình duyệt KHÔNG gửi request đi:
+  //   x-discord-client-version, x-discord-referrer-current,
+  //   x-discord-referrer-location, AndroidRequest  → đã bỏ hết.
   const RAW_OK = ["x-super-properties", "x-fingerprint", "x-installation-id", "x-discord-locale",
-    "x-discord-timezone", "x-debug-options", "x-discord-client-version", "x-client-trace-id",
-    "x-discord-referrer-current", "x-discord-referrer-location", "accept-language"];
+    "x-discord-timezone", "x-debug-options", "x-client-trace-id", "x-context-properties",
+    "x-track", "x-failed-requests", "x-discord-original-md5"];
   if (id?.raw) {
     for (const [k, v] of Object.entries(id.raw)) {
       if (RAW_OK.includes(k.toLowerCase()) && usable(v)) h[k] = v;
