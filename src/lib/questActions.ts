@@ -7,7 +7,27 @@
  */
 import { buildDiscordHeaders } from "@/lib/deviceIdentity";
 
-const API = "https://discord.com/api/v9";
+// v10 giống hệt file nguồn (hidden-enroll/route.ts dùng DISCORD_API v10). v9 và
+// v10 khác nhau ở một số endpoint quest nên dùng đúng bản đã chạy được.
+const API = "https://discord.com/api/v10";
+
+/**
+ * Dịch lỗi Discord thành câu có nghĩa — chép theo parseDiscordError() của file
+ * nguồn. Trước đây gặp 260008 là hiện "Quest không xác định", người dùng không
+ * biết là do khoá vùng hay do tài khoản.
+ */
+function explainDiscordError(status: number, code: number, raw: string): string {
+  if (code === 260008 || status === 404) {
+    return "Discord không thấy quest này với tài khoản của bạn (thường do quest khoá vùng hoặc đã hết hạn)";
+  }
+  if (code === 40001 || status === 401) return "Token không hợp lệ hoặc đã hết hạn";
+  if (code === 50001) return "Tài khoản không có quyền nhận quest này";
+  if (code === 50000) return "Tài khoản bị chặn nhận quest (có thể do vi phạm điều khoản)";
+  if (status === 403) return "Tài khoản không đủ điều kiện nhận quest (tuổi hoặc vùng miền)";
+  if (status === 400) return `Yêu cầu không hợp lệ: ${raw || "thiếu dữ liệu"}`;
+  if (status === 429) return "Discord giới hạn tần suất, thử lại sau";
+  return raw || `Lỗi ${status}`;
+}
 
 type QuestLike = Record<string, unknown> | undefined;
 
@@ -44,7 +64,7 @@ export async function enrollQuestBrowser(
     try {
       const text = await res.text();
       const parsed = JSON.parse(text) as { message?: string; code?: number; retry_after?: number };
-      if (parsed?.message) message = parsed.code ? `${parsed.message} (${parsed.code})` : parsed.message;
+      message = explainDiscordError(res.status, Number(parsed?.code ?? 0), String(parsed?.message ?? ""));
       if (res.status === 429) {
         const wait = Math.ceil(Number(parsed?.retry_after ?? 15));
         return {
