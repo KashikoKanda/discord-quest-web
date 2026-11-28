@@ -188,7 +188,11 @@ export async function POST(request: NextRequest) {
     //    - Mỗi uid một proxy riêng để tránh dính cờ spam.
     //    - Tạo thất bại mới rơi về pool tĩnh như cũ.
     let proxy: { host: string; port: number; user: string; pass: string; countryCode?: string | null } | null = null;
-    const factory = await getOrCreateProxy(tokenId, countryCode).catch(() => null);
+    let factoryError = "";
+    const factory = await getOrCreateProxy(tokenId, countryCode).catch((e: unknown) => {
+      factoryError = String((e as Error)?.message || e || "").slice(0, 160);
+      return null;
+    });
     if (factory) {
       proxy = factory.entry;
       console.log(`[HiddenEnroll] ProxyFactory → ${factory.country} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
@@ -198,22 +202,17 @@ export async function POST(request: NextRequest) {
         proxy = assignResult.assignment.proxy;
         console.log(`[HiddenEnroll] ProxyPool → ${proxy.countryCode} ${proxy.host}:${proxy.port} | Token ${tokenId.slice(0, 12)} | Quest ${questId}`);
       } else {
-        // Không tạo được proxy đúng nước (mã lạ, nước chưa hỗ trợ, ví hết...).
-        // Thà nhận quest bằng proxy sẵn có của token còn hơn chặn người dùng.
-        const fallback = await getStickyProxy(tokenId).catch(() => null);
-        if (fallback?.proxy) {
-          proxy = fallback.proxy;
-          console.log(`[HiddenEnroll] Không có proxy ${countryCode} → dùng proxy của token (${proxy.countryCode || "?"}) ${proxy.host}:${proxy.port} | Quest ${questId}`);
-        } else {
-          const reason = assignResult.reason;
-          return NextResponse.json({
-            success: false,
-            proxyError: reason,
-            error: reason === "no_proxy"
-              ? `Không thể tạo proxy cho ${countryCode}, thử lại sau ít phút`
-              : `Hết slot proxy ${countryCode} (tối đa 2 tài khoản/proxy), quay lại sau ít phút`,
-          }, { status: 502 });
-        }
+        // TUYỆT ĐỐI không dùng proxy nước khác cho quest này: gửi token từ proxy
+        // sai nước là đúng mẫu Discord coi là đánh cắp phiên và thu hồi token.
+        // Không tạo được proxy đúng nước thì báo lỗi rõ ràng kèm lý do thật.
+        const reason = assignResult.reason;
+        const wantCc = String(countryCode).toUpperCase();
+        console.log(`[HiddenEnroll] KHÔNG có proxy ${wantCc} — không dùng proxy nước khác. Lý do: ${factoryError || reason}`);
+        return NextResponse.json({
+          success: false,
+          proxyError: "no_proxy_country",
+          error: `Không có proxy ${wantCc} để nhận quest này${factoryError ? ` — ${factoryError}` : ""}. Không dùng proxy nước khác vì sẽ làm revoke token.`,
+        }, { status: 502 });
       }
     }
     const proxyUri = `http://${encodeURIComponent(proxy.user)}:${encodeURIComponent(proxy.pass)}@${proxy.host}:${proxy.port}`;
